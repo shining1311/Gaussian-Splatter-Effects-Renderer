@@ -1,0 +1,8 @@
+const DISTANCE_LINEAR = "linear";
+const DISTANCE_INVERSE = "inverse";
+const DISTANCE_EXPONENTIAL = "exponential";
+export {
+  DISTANCE_EXPONENTIAL,
+  DISTANCE_INVERSE,
+  DISTANCE_LINEAR
+};

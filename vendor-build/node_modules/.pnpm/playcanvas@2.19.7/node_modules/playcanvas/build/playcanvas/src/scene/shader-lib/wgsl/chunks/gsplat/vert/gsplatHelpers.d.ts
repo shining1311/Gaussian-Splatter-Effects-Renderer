@@ -1,0 +1,2 @@
+declare const _default: "\n// Make splat spherical by setting uniform scale\n// Use size = 0.0 to hide the splat\nfn gsplatMakeSpherical(scale: ptr<function, vec3f>, size: f32) {\n    *scale = vec3f(size);\n}\n\n// Get RMS size from scale vector\nfn gsplatGetSizeFromScale(scale: vec3f) -> f32 {\n    return sqrt((scale.x * scale.x + scale.y * scale.y + scale.z * scale.z) / 3.0);\n}\n";
+export default _default;

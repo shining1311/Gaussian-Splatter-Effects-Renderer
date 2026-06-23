@@ -1,0 +1,2 @@
+declare const _default: "\n\n// Splat identification for texture sampling\nstruct Splat {\n    index: u32,     // linear index into splat data\n    uv: vec2i       // texture coordinate for sampling\n}\n\n// Global splat instance used by format read functions and load functions\nvar<private> splat: Splat;\n\n// Initialize splat from linear index\nfn setSplat(idx: u32) {\n    splat.index = idx;\n    splat.uv = vec2i(i32(idx % uniform.splatTextureSize), i32(idx / uniform.splatTextureSize));\n}\n\n";
+export default _default;

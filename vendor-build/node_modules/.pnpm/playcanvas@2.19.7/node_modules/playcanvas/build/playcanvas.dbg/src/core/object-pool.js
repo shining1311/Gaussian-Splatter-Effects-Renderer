@@ -1,0 +1,67 @@
+var __defProp = Object.defineProperty;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
+class ObjectPool {
+  /**
+   * @param {T} constructorFunc - The constructor function for the
+   * objects in the pool.
+   * @param {number} size - The initial number of object instances to allocate.
+   */
+  constructor(constructorFunc, size) {
+    /**
+     * The constructor function for the objects in the pool.
+     *
+     * @type {new (...args: any[]) => any}
+     * @private
+     */
+    __publicField(this, "_constructor");
+    /**
+     * Array of object instances.
+     *
+     * @type {InstanceType<T>[]}
+     * @private
+     */
+    __publicField(this, "_pool", []);
+    /**
+     * The number of object instances that are currently allocated.
+     *
+     * @private
+     */
+    __publicField(this, "_count", 0);
+    this._constructor = constructorFunc;
+    this._resize(size);
+  }
+  /**
+   * @param {number} size - The number of object instances to allocate.
+   * @private
+   */
+  _resize(size) {
+    if (size > this._pool.length) {
+      for (let i = this._pool.length; i < size; i++) {
+        this._pool[i] = new this._constructor();
+      }
+    }
+  }
+  /**
+   * Returns an object instance from the pool. If no instances are available, the pool will be
+   * doubled in size and a new instance will be returned.
+   *
+   * @returns {InstanceType<T>} An object instance from the pool.
+   */
+  allocate() {
+    if (this._count >= this._pool.length) {
+      this._resize(this._pool.length * 2);
+    }
+    return this._pool[this._count++];
+  }
+  /**
+   * All object instances in the pool will be available again. The pool itself will not be
+   * resized.
+   */
+  freeAll() {
+    this._count = 0;
+  }
+}
+export {
+  ObjectPool
+};

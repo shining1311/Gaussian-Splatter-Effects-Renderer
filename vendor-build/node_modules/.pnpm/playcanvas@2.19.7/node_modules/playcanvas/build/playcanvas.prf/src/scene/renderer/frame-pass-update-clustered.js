@@ -1,0 +1,41 @@
+import { now } from "../../core/time.js";
+import { FramePass } from "../../platform/graphics/frame-pass.js";
+import { RenderPassCookieRenderer } from "./render-pass-cookie-renderer.js";
+import { RenderPassShadowLocalClustered } from "./render-pass-shadow-local-clustered.js";
+class FramePassUpdateClustered extends FramePass {
+	constructor(device, renderer, shadowRenderer, shadowRendererLocal, lightTextureAtlas) {
+		super(device);
+		this.renderer = renderer;
+		this.frameGraph = null;
+		this.cookiesRenderPass = RenderPassCookieRenderer.create(lightTextureAtlas.cookieRenderTarget, lightTextureAtlas.cubeSlotsOffsets);
+		this.beforePasses.push(this.cookiesRenderPass);
+		this.shadowRenderPass = new RenderPassShadowLocalClustered(device, shadowRenderer, shadowRendererLocal);
+		this.beforePasses.push(this.shadowRenderPass);
+	}
+	update(frameGraph, shadowsEnabled, cookiesEnabled, lights, localLights) {
+		this.frameGraph = frameGraph;
+		this.cookiesRenderPass.enabled = cookiesEnabled;
+		if (cookiesEnabled) {
+			this.cookiesRenderPass.update(lights);
+		}
+		this.shadowRenderPass.enabled = shadowsEnabled;
+		if (shadowsEnabled) {
+			this.shadowRenderPass.update(localLights);
+		}
+	}
+	destroy() {
+		this.cookiesRenderPass.destroy();
+		this.cookiesRenderPass = null;
+	}
+	execute() {
+		const startTime = now();
+		const { renderer } = this;
+		const { scene } = renderer;
+		renderer.worldClustersAllocator.update(this.frameGraph.renderPasses, scene.lighting);
+		renderer._lightClustersTime += now() - startTime;
+		renderer._lightClusters = renderer.worldClustersAllocator.count;
+	}
+}
+export {
+	FramePassUpdateClustered
+};

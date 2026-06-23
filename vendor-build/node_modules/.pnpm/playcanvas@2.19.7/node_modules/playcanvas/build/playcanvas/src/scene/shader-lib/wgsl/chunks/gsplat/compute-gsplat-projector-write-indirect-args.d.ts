@@ -1,0 +1,2 @@
+export const computeGsplatProjectorWriteIndirectArgsSource: string;
+export default computeGsplatProjectorWriteIndirectArgsSource;

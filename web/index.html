@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Remy Splat Studio</title>
+  <link rel="stylesheet" href="style.css?v=20260623">
+</head>
+<body>
+  <canvas id="stage"></canvas>
+
+  <header class="topbar glass">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <div><strong>Remy Splat Studio</strong><small>Gaussian animation renderer</small></div>
+    </div>
+    <div class="top-actions">
+      <button id="openFile" class="button primary">导入高斯 PLY</button>
+      <button id="play" class="button" disabled>播放动画</button>
+      <button id="record" class="button record" disabled>录制视频</button>
+      <input id="fileInput" type="file" accept=".ply" hidden>
+    </div>
+  </header>
+
+  <aside class="panel glass">
+    <section>
+      <div class="section-title"><span>01</span>模型</div>
+      <div id="dropZone" class="drop-zone">
+        <div class="drop-icon">✦</div>
+        <b id="modelName">拖入 gs.ply</b>
+        <small>支持 MipMap 二进制 3DGS PLY</small>
+      </div>
+      <label>载入高斯数量
+        <select id="quality">
+          <option value="full" selected>完整精度 · 全部高斯</option>
+        </select>
+      </label>
+    </section>
+
+    <section>
+      <div class="section-title"><span>02</span>动画</div>
+      <label>时长 <output id="durationOut">8.0 秒</output>
+        <input id="duration" type="range" min="3" max="20" step="0.5" value="8">
+      </label>
+      <label>爆炸强度 <output id="explosionOut">1.25</output>
+        <input id="explosion" type="range" min="0" max="3" step="0.05" value="1.25">
+      </label>
+      <label>扫描波宽度 <output id="waveOut">0.075</output>
+        <input id="wave" type="range" min="0.025" max="0.18" step="0.005" value="0.075">
+      </label>
+      <label>高斯尺寸 <output id="sizeOut">1.00</output>
+        <input id="splatSize" type="range" min="0.35" max="2.2" step="0.05" value="1.00">
+      </label>
+      <label class="check"><input id="autoCamera" type="checkbox" checked><span>自动推进镜头</span></label>
+      <label class="check"><input id="loop" type="checkbox"><span>循环预览</span></label>
+    </section>
+
+    <section>
+      <div class="section-title"><span>03</span>视频</div>
+      <div class="grid-two">
+        <label>分辨率
+          <select id="resolution">
+            <option value="1920x1080" selected>1080p 横屏</option>
+            <option value="2560x1440">1440p 横屏</option>
+            <option value="3840x2160">4K 横屏</option>
+            <option value="1080x1920">1080p 竖屏</option>
+            <option value="2160x3840">4K 竖屏</option>
+          </select>
+        </label>
+        <label>帧率
+          <select id="fps"><option>24</option><option selected>30</option><option>60</option></select>
+        </label>
+      </div>
+      <label>视频码率
+        <select id="bitrate">
+          <option value="12000000">12 Mbps</option>
+          <option value="25000000" selected>25 Mbps</option>
+          <option value="50000000">50 Mbps</option>
+          <option value="80000000">80 Mbps</option>
+        </select>
+      </label>
+      <p class="format" id="formatHint">正在检测 MP4 硬件编码能力…</p>
+    </section>
+  </aside>
+
+  <div class="timeline glass">
+    <button id="restart" class="icon-button" disabled title="回到开头">↺</button>
+    <span id="timeLabel">00:00.0</span>
+    <input id="timeline" type="range" min="0" max="1" step="0.001" value="0" disabled>
+    <span id="durationLabel">00:08.0</span>
+  </div>
+
+  <div class="hud">
+    <span id="status">等待导入模型</span>
+    <span id="stats">WebGL2</span>
+  </div>
+
+  <div id="loading" class="loading hidden">
+    <div class="loader-ring"></div>
+    <strong id="loadingTitle">正在读取模型</strong>
+    <span id="loadingText">0%</span>
+    <div class="progress"><i id="progressBar"></i></div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <script src="playcanvas.min.js?v=2.19.7"></script>
+  <script src="app.js?v=20260623-full"></script>
+</body>
+</html>

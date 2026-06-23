@@ -1,0 +1,29 @@
+class WebglDrawCommands {
+	indexSizeBytes;
+	glCounts = null;
+	glOffsetsBytes = null;
+	glInstanceCounts = null;
+	constructor(indexSizeBytes) {
+		this.indexSizeBytes = indexSizeBytes;
+	}
+	allocate(maxCount) {
+		if (this.glCounts && this.glCounts.length === maxCount) {
+			return;
+		}
+		this.glCounts = new Int32Array(maxCount);
+		this.glOffsetsBytes = new Int32Array(maxCount);
+		this.glInstanceCounts = new Int32Array(maxCount);
+	}
+	add(i, indexOrVertexCount, instanceCount, firstIndexOrVertex) {
+		this.glCounts[i] = indexOrVertexCount;
+		this.glOffsetsBytes[i] = firstIndexOrVertex * this.indexSizeBytes;
+		this.glInstanceCounts[i] = instanceCount;
+	}
+	update(count) {
+		let totalPrimitives = 0;
+		return totalPrimitives;
+	}
+}
+export {
+	WebglDrawCommands
+};

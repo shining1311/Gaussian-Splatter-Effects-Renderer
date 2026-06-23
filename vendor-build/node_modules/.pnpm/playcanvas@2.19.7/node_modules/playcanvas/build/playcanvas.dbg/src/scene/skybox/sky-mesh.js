@@ -1,0 +1,82 @@
+var __defProp = Object.defineProperty;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
+import { CULLFACE_FRONT, SEMANTIC_POSITION, SHADERLANGUAGE_GLSL, SHADERLANGUAGE_WGSL } from "../../platform/graphics/constants.js";
+import { LAYERID_SKYBOX, SKYTYPE_INFINITE } from "../constants.js";
+import { ShaderMaterial } from "../materials/shader-material.js";
+import { MeshInstance } from "../mesh-instance.js";
+import { ChunkUtils } from "../shader-lib/chunk-utils.js";
+import { SkyGeometry } from "./sky-geometry.js";
+import { ShaderChunks } from "../shader-lib/shader-chunks.js";
+class SkyMesh {
+  /**
+   * @param {GraphicsDevice} device - The graphics device.
+   * @param {Scene} scene - The scene owning the sky.
+   * @param {GraphNode} node - The graph node of the sky mesh instance.
+   * @param {Texture} texture - The texture of the sky.
+   * @param {string} type - The type of the sky. One of the SKYTYPE_* constants.
+   */
+  constructor(device, scene, node, texture, type) {
+    /**
+     * Mesh instance representing the visuals of the sky.
+     *
+     * @type {MeshInstance|null}
+     */
+    __publicField(this, "meshInstance", null);
+    /** @private */
+    __publicField(this, "_depthWrite", false);
+    const material = new ShaderMaterial({
+      uniqueName: "SkyMaterial",
+      vertexGLSL: ShaderChunks.get(device, SHADERLANGUAGE_GLSL).get("skyboxVS"),
+      fragmentGLSL: ShaderChunks.get(device, SHADERLANGUAGE_GLSL).get("skyboxPS"),
+      vertexWGSL: ShaderChunks.get(device, SHADERLANGUAGE_WGSL).get("skyboxVS"),
+      fragmentWGSL: ShaderChunks.get(device, SHADERLANGUAGE_WGSL).get("skyboxPS"),
+      attributes: {
+        aPosition: SEMANTIC_POSITION
+      }
+    });
+    material.setDefine("{SKYBOX_DECODE_FNC}", ChunkUtils.decodeFunc(texture.encoding));
+    if (type !== SKYTYPE_INFINITE) material.setDefine("SKYMESH", "");
+    if (texture.cubemap) material.setDefine("SKY_CUBEMAP", "");
+    material.setParameter("skyboxHighlightMultiplier", scene.skyboxHighlightMultiplier);
+    if (texture.cubemap) {
+      material.setParameter("texture_cubeMap", texture);
+    } else {
+      material.setParameter("texture_envAtlas", texture);
+      material.setParameter("mipLevel", scene.skyboxMip);
+    }
+    material.cull = CULLFACE_FRONT;
+    material.depthWrite = this._depthWrite;
+    const skyLayer = scene.layers.getLayerById(LAYERID_SKYBOX);
+    if (skyLayer) {
+      const mesh = SkyGeometry.create(device, type);
+      const meshInstance = new MeshInstance(mesh, material, node);
+      this.meshInstance = meshInstance;
+      meshInstance.cull = false;
+      meshInstance.pick = false;
+      skyLayer.addMeshInstances([meshInstance]);
+      this.skyLayer = skyLayer;
+    }
+  }
+  destroy() {
+    if (this.meshInstance) {
+      if (this.skyLayer) {
+        this.skyLayer.removeMeshInstances([this.meshInstance]);
+      }
+      this.meshInstance.destroy();
+      this.meshInstance = null;
+    }
+  }
+  set depthWrite(value) {
+    this._depthWrite = value;
+    if (this.meshInstance) {
+      this.meshInstance.material.depthWrite = value;
+    }
+  }
+  get depthWrite() {
+    return this._depthWrite;
+  }
+}
+export {
+  SkyMesh
+};

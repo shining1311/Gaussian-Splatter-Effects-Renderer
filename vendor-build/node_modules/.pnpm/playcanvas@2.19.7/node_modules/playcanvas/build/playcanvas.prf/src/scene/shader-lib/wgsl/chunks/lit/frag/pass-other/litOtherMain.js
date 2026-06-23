@@ -1,0 +1,29 @@
+var litOtherMain_default = `
+#ifdef PICK_PASS
+	#include "pickPS"
+#endif
+#ifdef PREPASS_PASS
+	#include "floatAsUintPS"
+#endif
+@fragment
+fn fragmentMain(input: FragmentInput) -> FragmentOutput {
+	#include "litUserMainStartPS"
+	var output: FragmentOutput;
+	
+	evaluateFrontend();
+	#ifdef PICK_PASS
+		output.color = getPickOutput();
+		#ifdef DEPTH_PICK_PASS
+			output.color1 = getPickDepth();
+		#endif
+	#endif
+	#ifdef PREPASS_PASS
+		output.color = float2vec4(vLinearDepth);
+	#endif
+	#include "litUserMainEndPS"
+	return output;
+}
+`;
+export {
+	litOtherMain_default as default
+};

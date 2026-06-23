@@ -1,0 +1,35 @@
+import { SphereGeometry } from "../../../scene/geometry/sphere-geometry.js";
+import { Mesh } from "../../../scene/mesh.js";
+import { TriData } from "../tri-data.js";
+import { Shape } from "./shape.js";
+class SphereShape extends Shape {
+	_radius = 0.03;
+	constructor(device, args = {}) {
+		super(device, "sphereCenter", args);
+		this._radius = args.radius ?? this._radius;
+		this.triData = [
+			new TriData(new SphereGeometry(), 2)
+		];
+		this._createRenderComponent(this.entity, [
+			Mesh.fromGeometry(this.device, new SphereGeometry({
+				latitudeBands: 32,
+				longitudeBands: 32
+			}))
+		]);
+		this._update();
+	}
+	set radius(value) {
+		this._radius = value ?? this._radius;
+		this._update();
+	}
+	get radius() {
+		return this._radius;
+	}
+	_update() {
+		const scale = this._radius * 2;
+		this.entity.setLocalScale(scale, scale, scale);
+	}
+}
+export {
+	SphereShape
+};

@@ -1,0 +1,130 @@
+var __defProp = Object.defineProperty;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
+import { Vec3 } from "../../../core/math/vec3.js";
+import { CULLFACE_NONE } from "../../../platform/graphics/constants.js";
+import { PlaneGeometry } from "../../../scene/geometry/plane-geometry.js";
+import { Mesh } from "../../../scene/mesh.js";
+import { TriData } from "../tri-data.js";
+import { Shape } from "./shape.js";
+const UPDATE_EPSILON = 1e-6;
+class PlaneShape extends Shape {
+  /**
+   * Create a new PlaneShape.
+   *
+   * @param {GraphicsDevice} device - The graphics device.
+   * @param {ShapeArgs & PlaneShapeArgs} args - The shape options.
+   */
+  constructor(device, args = {}) {
+    super(device, "plane", args);
+    /**
+     * The culling mode for the plane.
+     *
+     * @type {number}
+     * @protected
+     */
+    __publicField(this, "_cull", CULLFACE_NONE);
+    /**
+     * The size of the plane.
+     *
+     * @private
+     */
+    __publicField(this, "_size", 0.16);
+    /**
+     * The gap between the plane and the center.
+     *
+     * @private
+     */
+    __publicField(this, "_gap", 0);
+    /**
+     * The internal flipped state of the plane.
+     *
+     * @private
+     */
+    __publicField(this, "_flipped", new Vec3());
+    this._size = args.size ?? this._size;
+    this._gap = args.gap ?? this._gap;
+    this.triData = [
+      new TriData(new PlaneGeometry())
+    ];
+    this._createRenderComponent(this.entity, [
+      Mesh.fromGeometry(this.device, new PlaneGeometry())
+    ]);
+    this._update();
+  }
+  /**
+   * Set the size of the plane.
+   *
+   * @type {number}
+   */
+  set size(value) {
+    this._size = value ?? this._size;
+    this._update();
+  }
+  /**
+   * Get the size of the plane.
+   *
+   * @type {number}
+   */
+  get size() {
+    return this._size;
+  }
+  /**
+   * Set the gap between the plane and the center.
+   *
+   * @type {number}
+   */
+  set gap(value) {
+    this._gap = value ?? this._gap;
+    this._update();
+  }
+  /**
+   * Get the gap between the plane and the center.
+   *
+   * @type {number}
+   */
+  get gap() {
+    return this._gap;
+  }
+  /**
+   * Set the flipped state of the plane.
+   *
+   * @type {Vec3}
+   */
+  set flipped(value) {
+    if (this._flipped.distance(value) < UPDATE_EPSILON) {
+      return;
+    }
+    this._flipped.copy(value);
+    this._update();
+  }
+  /**
+   * Get the flipped state of the plane.
+   *
+   * @type {Vec3}
+   */
+  get flipped() {
+    return this._flipped;
+  }
+  /**
+   * Update the shape's transform.
+   *
+   * @protected
+   * @override
+   */
+  _update() {
+    const offset = this._size / 2 + this._gap;
+    this._position.set(
+      this._flipped.x ? -offset : offset,
+      this._flipped.y ? -offset : offset,
+      this._flipped.z ? -offset : offset
+    );
+    this._position[this.axis] = 0;
+    this.entity.setLocalPosition(this._position);
+    this.entity.setLocalEulerAngles(this._rotation);
+    this.entity.setLocalScale(this._size, this._size, this._size);
+  }
+}
+export {
+  PlaneShape
+};

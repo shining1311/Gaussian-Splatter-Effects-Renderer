@@ -1,0 +1,36 @@
+import { EventHandler } from "../core/event-handler.js";
+class Render extends EventHandler {
+	static EVENT_SETMESHES = "set:meshes";
+	_meshes = null;
+	set meshes(value) {
+		this.decRefMeshes();
+		this._meshes = value;
+		this.incRefMeshes();
+		this.fire("set:meshes", value);
+	}
+	get meshes() {
+		return this._meshes;
+	}
+	destroy() {
+		this.meshes = null;
+	}
+	decRefMeshes() {
+		this._meshes?.forEach((mesh, index) => {
+			if (mesh) {
+				mesh.decRefCount();
+				if (mesh.refCount < 1) {
+					mesh.destroy();
+					this._meshes[index] = null;
+				}
+			}
+		});
+	}
+	incRefMeshes() {
+		this._meshes?.forEach((mesh) => {
+			mesh?.incRefCount();
+		});
+	}
+}
+export {
+	Render
+};

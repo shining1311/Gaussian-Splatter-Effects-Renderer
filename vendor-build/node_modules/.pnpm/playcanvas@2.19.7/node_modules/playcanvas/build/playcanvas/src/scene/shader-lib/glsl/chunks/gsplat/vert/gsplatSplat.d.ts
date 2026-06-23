@@ -1,0 +1,2 @@
+declare const _default: "\n\n// Splat identification for texture sampling\nstruct Splat {\n    uint index;     // linear index into splat data\n    ivec2 uv;       // texture coordinate for sampling\n};\n\n// Global splat instance used by format read functions and load functions\nSplat splat;\n\n// Initialize splat from linear index\nvoid setSplat(uint idx) {\n    splat.index = idx;\n    splat.uv = ivec2(idx % splatTextureSize, idx / splatTextureSize);\n}\n\n";
+export default _default;

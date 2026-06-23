@@ -1,0 +1,194 @@
+var __defProp = Object.defineProperty;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
+import { Tracing } from "./tracing.js";
+const _Debug = class _Debug {
+  /**
+   * Deprecated warning message.
+   *
+   * @param {string} message - The message to log.
+   */
+  static deprecated(message) {
+    if (!_Debug._loggedMessages.has(message)) {
+      _Debug._loggedMessages.add(message);
+      console.warn(`DEPRECATED: ${message}`);
+    }
+  }
+  /**
+   * Removed warning message.
+   *
+   * @param {string} message - The message to log.
+   */
+  static removed(message) {
+    if (!_Debug._loggedMessages.has(message)) {
+      _Debug._loggedMessages.add(message);
+      console.error(`REMOVED: ${message}`);
+    }
+  }
+  /**
+   * Assertion deprecated message. If the assertion is false, the deprecated message is written to the log.
+   *
+   * @param {boolean|object} assertion - The assertion to check.
+   * @param {string} message - The message to log.
+   */
+  static assertDeprecated(assertion, message) {
+    if (!assertion) {
+      _Debug.deprecated(message);
+    }
+  }
+  /**
+   * Assertion error message. If the assertion is false, the error message is written to the log.
+   *
+   * @param {boolean|object} assertion - The assertion to check.
+   * @param {...*} args - The values to be written to the log.
+   */
+  static assert(assertion, ...args) {
+    if (!assertion) {
+      console.error("ASSERT FAILED: ", ...args);
+    }
+  }
+  /**
+   * Assertion error message that writes an error message to the log if the object has already
+   * been destroyed. To be used along setDestroyed.
+   *
+   * @param {object} object - The object to check.
+   */
+  static assertDestroyed(object) {
+    if (object?.__alreadyDestroyed) {
+      const message = `[${object.constructor?.name}] with name [${object.name}] has already been destroyed, and cannot be used.`;
+      if (!_Debug._loggedMessages.has(message)) {
+        _Debug._loggedMessages.add(message);
+        console.error("ASSERT FAILED: ", message, object);
+      }
+    }
+  }
+  /**
+   * Executes a function in debug mode only.
+   *
+   * @param {Function} func - Function to call.
+   */
+  static call(func) {
+    func();
+  }
+  /**
+   * Info message.
+   *
+   * @param {...*} args - The values to be written to the log.
+   */
+  static log(...args) {
+    console.log(...args);
+  }
+  /**
+   * Info message logged no more than once.
+   *
+   * @param {string} message - The message to log.
+   * @param {...*} args - The values to be written to the log.
+   */
+  static logOnce(message, ...args) {
+    if (!_Debug._loggedMessages.has(message)) {
+      _Debug._loggedMessages.add(message);
+      console.log(message, ...args);
+    }
+  }
+  /**
+   * Warning message.
+   *
+   * @param {...*} args - The values to be written to the log.
+   */
+  static warn(...args) {
+    console.warn(...args);
+  }
+  /**
+   * Warning message logged no more than once.
+   *
+   * @param {string} message - The message to log.
+   * @param {...*} args - The values to be written to the log.
+   */
+  static warnOnce(message, ...args) {
+    if (!_Debug._loggedMessages.has(message)) {
+      _Debug._loggedMessages.add(message);
+      console.warn(message, ...args);
+    }
+  }
+  /**
+   * Error message.
+   *
+   * @param {...*} args - The values to be written to the log.
+   */
+  static error(...args) {
+    console.error(...args);
+  }
+  /**
+   * Error message logged no more than once.
+   *
+   * @param {string} message - The message to log.
+   * @param {...*} args - The values to be written to the log.
+   */
+  static errorOnce(message, ...args) {
+    if (!_Debug._loggedMessages.has(message)) {
+      _Debug._loggedMessages.add(message);
+      console.error(message, ...args);
+    }
+  }
+  /**
+   * Trace message, which is logged to the console if the tracing for the channel is enabled
+   *
+   * @param {string} channel - The trace channel
+   * @param {...*} args - The values to be written to the log.
+   */
+  static trace(channel, ...args) {
+    if (Tracing.get(channel)) {
+      console.groupCollapsed(`${channel.padEnd(20, " ")}|`, ...args);
+      if (Tracing.stack) {
+        console.trace();
+      }
+      console.groupEnd();
+    }
+  }
+};
+/**
+ * Set storing already logged messages, to only print each unique message one time.
+ *
+ * @type {Set<string>}
+ * @private
+ */
+__publicField(_Debug, "_loggedMessages", /* @__PURE__ */ new Set());
+let Debug = _Debug;
+class DebugHelper {
+  /**
+   * Set a name to the name property of the object. Executes only in the debug build.
+   *
+   * @param {object} object - The object to assign the name to.
+   * @param {string} name - The name to assign.
+   */
+  static setName(object, name) {
+    if (object) {
+      object.name = name;
+    }
+  }
+  /**
+   * Set a label to the label property of the object. Executes only in the debug build.
+   *
+   * @param {object} object - The object to assign the name to.
+   * @param {string} label - The label to assign.
+   */
+  static setLabel(object, label) {
+    if (object) {
+      object.label = label;
+    }
+  }
+  /**
+   * Marks object as destroyed. Executes only in the debug build. To be used along assertDestroyed.
+   *
+   * @param {object} object - The object to mark as destroyed.
+   */
+  static setDestroyed(object) {
+    if (object) {
+      object.__alreadyDestroyed = true;
+    }
+  }
+}
+export {
+  Debug,
+  DebugHelper
+};

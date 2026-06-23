@@ -1,0 +1,59 @@
+var __defProp = Object.defineProperty;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
+import { Vec2 } from "../../../core/math/vec2.js";
+import { math } from "../../../core/math/math.js";
+import { AnimBlendTree } from "./anim-blend-tree.js";
+const _AnimBlendTreeDirectional2D = class _AnimBlendTreeDirectional2D extends AnimBlendTree {
+  pointCache(i, j) {
+    const pointKey = `${i}${j}`;
+    if (!this._pointCache[pointKey]) {
+      this._pointCache[pointKey] = new Vec2(
+        (this._children[j].pointLength - this._children[i].pointLength) / ((this._children[j].pointLength + this._children[i].pointLength) / 2),
+        Vec2.angleRad(this._children[i].point, this._children[j].point) * 2
+      );
+    }
+    return this._pointCache[pointKey];
+  }
+  calculateWeights() {
+    if (this.updateParameterValues()) return;
+    let weightSum, weightedDurationSum;
+    _AnimBlendTreeDirectional2D._p.set(...this._parameterValues);
+    const pLength = _AnimBlendTreeDirectional2D._p.length();
+    weightSum = 0;
+    weightedDurationSum = 0;
+    for (let i = 0; i < this._children.length; i++) {
+      const child = this._children[i];
+      const pi = child.point;
+      const piLength = child.pointLength;
+      let minj = Number.MAX_VALUE;
+      for (let j = 0; j < this._children.length; j++) {
+        if (i === j) continue;
+        const pipj = this.pointCache(i, j);
+        const pjLength = this._children[j].pointLength;
+        _AnimBlendTreeDirectional2D._pip.set((pLength - piLength) / ((pjLength + piLength) / 2), Vec2.angleRad(pi, _AnimBlendTreeDirectional2D._p) * 2);
+        const result = math.clamp(1 - Math.abs(_AnimBlendTreeDirectional2D._pip.dot(pipj) / pipj.lengthSq()), 0, 1);
+        if (result < minj) minj = result;
+      }
+      child.weight = minj;
+      weightSum += minj;
+      if (this._syncAnimations) {
+        weightedDurationSum += child.animTrack.duration / child.absoluteSpeed * child.weight;
+      }
+    }
+    for (let i = 0; i < this._children.length; i++) {
+      const child = this._children[i];
+      child.weight = child._weight / weightSum;
+      if (this._syncAnimations) {
+        const weightedChildDuration = child.animTrack.duration / weightedDurationSum * weightSum;
+        child.weightedSpeed = child.absoluteSpeed * weightedChildDuration;
+      }
+    }
+  }
+};
+__publicField(_AnimBlendTreeDirectional2D, "_p", new Vec2());
+__publicField(_AnimBlendTreeDirectional2D, "_pip", new Vec2());
+let AnimBlendTreeDirectional2D = _AnimBlendTreeDirectional2D;
+export {
+  AnimBlendTreeDirectional2D
+};

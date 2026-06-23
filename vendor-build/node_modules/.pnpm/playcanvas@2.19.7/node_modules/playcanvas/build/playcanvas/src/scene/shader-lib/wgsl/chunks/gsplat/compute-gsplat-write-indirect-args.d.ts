@@ -1,0 +1,2 @@
+export const computeGsplatWriteIndirectArgsSource: string;
+export default computeGsplatWriteIndirectArgsSource;

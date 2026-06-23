@@ -1,0 +1,2 @@
+declare const _default: "\n#ifdef CAPS_SHADER_F16\n    alias half = f16;\n    alias half2 = vec2<f16>;\n    alias half3 = vec3<f16>;\n    alias half4 = vec4<f16>;\n    alias half2x2 = mat2x2<f16>;\n    alias half3x3 = mat3x3<f16>;\n    alias half4x4 = mat4x4<f16>;\n#else\n    alias half = f32;\n    alias half2 = vec2f;\n    alias half3 = vec3f;\n    alias half4 = vec4f;\n    alias half2x2 = mat2x2f;\n    alias half3x3 = mat3x3f;\n    alias half4x4 = mat4x4f;\n#endif\n";
+export default _default;

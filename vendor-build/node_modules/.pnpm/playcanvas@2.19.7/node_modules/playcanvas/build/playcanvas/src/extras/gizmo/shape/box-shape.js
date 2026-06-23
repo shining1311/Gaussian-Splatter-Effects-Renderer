@@ -1,0 +1,31 @@
+import { BoxGeometry } from "../../../scene/geometry/box-geometry.js";
+import { Mesh } from "../../../scene/mesh.js";
+import { TriData } from "../tri-data.js";
+import { Shape } from "./shape.js";
+class BoxShape extends Shape {
+	_size = 0.06;
+	constructor(device, args = {}) {
+		super(device, "boxCenter", args);
+		this._size = args.size ?? this._size;
+		this.triData = [
+			new TriData(new BoxGeometry(), 2)
+		];
+		this._createRenderComponent(this.entity, [
+			Mesh.fromGeometry(this.device, new BoxGeometry())
+		]);
+		this._update();
+	}
+	set size(value) {
+		this._size = value ?? this._size;
+		this._update();
+	}
+	get size() {
+		return this._size;
+	}
+	_update() {
+		this.entity.setLocalScale(this._size, this._size, this._size);
+	}
+}
+export {
+	BoxShape
+};

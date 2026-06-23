@@ -1,0 +1,21 @@
+import { StringIds } from "../../core/string-ids.js";
+const stringIds = new StringIds();
+class TextureView {
+	texture;
+	baseMipLevel;
+	mipLevelCount;
+	baseArrayLayer;
+	arrayLayerCount;
+	key;
+	constructor(texture, baseMipLevel = 0, mipLevelCount = 1, baseArrayLayer = 0, arrayLayerCount = 1) {
+		this.texture = texture;
+		this.baseMipLevel = baseMipLevel;
+		this.mipLevelCount = mipLevelCount;
+		this.baseArrayLayer = baseArrayLayer;
+		this.arrayLayerCount = arrayLayerCount;
+		this.key = stringIds.get(`${baseMipLevel}:${mipLevelCount}:${baseArrayLayer}:${arrayLayerCount}`);
+	}
+}
+export {
+	TextureView
+};

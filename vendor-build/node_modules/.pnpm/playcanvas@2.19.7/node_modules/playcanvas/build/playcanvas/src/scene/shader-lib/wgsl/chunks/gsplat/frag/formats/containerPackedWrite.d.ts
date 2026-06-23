@@ -1,0 +1,2 @@
+declare const _default: "\nfn writeSplat(center: vec3f, rotation: vec4f, scale: vec3f, color: vec4f) {\n    writeDataColor(color);\n    #ifndef GSPLAT_COLOR_ONLY\n        writeDataTransformA(vec4u(bitcast<u32>(center.x), bitcast<u32>(center.y), bitcast<u32>(center.z), pack2x16float(rotation.xy)));\n        writeDataTransformB(vec4u(pack2x16float(vec2f(rotation.z, scale.x)), pack2x16float(scale.yz), 0u, 0u));\n    #endif\n}\n";
+export default _default;

@@ -1,0 +1,9 @@
+var particle_billboard_default = `
+	let rotationResult = rotateWithMatrix(quadXY, inAngle);
+	let rotatedQuadXY = rotationResult.rotatedVec;
+	rotMatrix = rotationResult.matrix;
+	var localPos = billboard(particlePos, rotatedQuadXY);
+`;
+export {
+	particle_billboard_default as default
+};
