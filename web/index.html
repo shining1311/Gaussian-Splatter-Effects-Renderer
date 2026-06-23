@@ -3,21 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Remy Splat Studio</title>
-  <link rel="stylesheet" href="style.css?v=20260623">
+  <title>GaussianSplatterEffectsStudio</title>
+  <link rel="stylesheet" href="style.css?v=20260623-camera4">
 </head>
 <body>
   <canvas id="stage"></canvas>
 
   <header class="topbar glass">
-    <div class="brand">
-      <span class="brand-mark"></span>
-      <div><strong>Remy Splat Studio</strong><small>Gaussian animation renderer</small></div>
-    </div>
+    <div class="brand"><span class="brand-mark"></span><div><strong>GaussianSplatterEffectsStudio</strong><small>FULL 3DGS · CAMERA · EFFECTS · VIDEO</small></div></div>
     <div class="top-actions">
       <button id="openFile" class="button primary">导入高斯 PLY</button>
       <button id="play" class="button" disabled>播放动画</button>
-      <button id="record" class="button record" disabled>录制视频</button>
+      <button id="record" class="button record" disabled>渲染视频</button>
       <input id="fileInput" type="file" accept=".ply" hidden>
     </div>
   </header>
@@ -25,85 +22,91 @@
   <aside class="panel glass">
     <section>
       <div class="section-title"><span>01</span>模型</div>
-      <div id="dropZone" class="drop-zone">
-        <div class="drop-icon">✦</div>
-        <b id="modelName">拖入 gs.ply</b>
-        <small>支持 MipMap 二进制 3DGS PLY</small>
-      </div>
-      <label>载入高斯数量
-        <select id="quality">
-          <option value="full" selected>完整精度 · 全部高斯</option>
+      <div id="dropZone" class="drop-zone"><div class="drop-icon">✦</div><b id="modelName">拖入 gs.ply / gs_full.ply</b><small>完整精度 · SH0 / SH3 · 本地处理</small></div>
+      <p class="help">鼠标只改变工作视角，不会修改拍摄轨迹。左键环绕 · 右键/中键平移 · 滚轮缩放</p>
+    </section>
+
+    <section>
+      <div class="section-title"><span>02</span>高斯特效</div>
+      <label>特效预设
+        <select id="effectPreset">
+          <option value="0" selected>爆散聚合 · Particle Burst</option><option value="1">扫描显形 · Radial Scan</option><option value="2">粒子雨 · Particle Rain</option><option value="3">旋涡聚合 · Vortex Assemble</option><option value="4">晶格拼装 · Grid Build</option><option value="5">尘埃升腾 · Dust Rise</option><option value="6">能量脉冲 · Energy Pulse</option>
         </select>
       </label>
+      <label>时长 <output id="durationOut">8.0 秒</output><input id="duration" type="range" min="3" max="20" step="0.5" value="8"></label>
+      <label>特效强度 <output id="effectStrengthOut">1.25</output><input id="effectStrength" type="range" min="0" max="3" step="0.05" value="1.25"></label>
+      <label>波纹宽度 <output id="waveOut">0.075</output><input id="wave" type="range" min="0.025" max="0.18" step="0.005" value="0.075"></label>
+      <label>高斯尺寸 <output id="sizeOut">1.00</output><input id="splatSize" type="range" min="0.35" max="2.2" step="0.05" value="1.00"></label>
     </section>
 
     <section>
-      <div class="section-title"><span>02</span>动画</div>
-      <label>时长 <output id="durationOut">8.0 秒</output>
-        <input id="duration" type="range" min="3" max="20" step="0.5" value="8">
+      <div class="section-title"><span>03</span>电影运镜</div>
+      <label>轨迹形状
+        <select id="cameraPreset"><option value="static">定点 · Locked</option><option value="orbit" selected>完整圆圈 · Circle</option><option value="arc">圆弧 · Arc</option><option value="spiral">螺旋靠近 · Spiral</option><option value="dollyIn">直线推进 · Dolly In</option><option value="dollyOut">直线拉远 · Dolly Out</option><option value="crane">升降轨迹 · Crane</option><option value="figure8">8 字轨迹 · Figure Eight</option><option value="hero">英雄镜头 · Hero Rise</option></select>
       </label>
-      <label>爆炸强度 <output id="explosionOut">1.25</output>
-        <input id="explosion" type="range" min="0" max="3" step="0.05" value="1.25">
-      </label>
-      <label>扫描波宽度 <output id="waveOut">0.075</output>
-        <input id="wave" type="range" min="0.025" max="0.18" step="0.005" value="0.075">
-      </label>
-      <label>高斯尺寸 <output id="sizeOut">1.00</output>
-        <input id="splatSize" type="range" min="0.35" max="2.2" step="0.05" value="1.00">
-      </label>
-      <label class="check"><input id="autoCamera" type="checkbox" checked><span>自动推进镜头</span></label>
-      <label class="check"><input id="loop" type="checkbox"><span>循环预览</span></label>
-    </section>
-
-    <section>
-      <div class="section-title"><span>03</span>视频</div>
+      <label>运镜幅度 <output id="cameraStrengthOut">1.00</output><input id="cameraStrength" type="range" min="0" max="2" step="0.05" value="1"></label>
+      <div class="subsection-title">轨道定义</div>
       <div class="grid-two">
-        <label>分辨率
-          <select id="resolution">
-            <option value="1920x1080" selected>1080p 横屏</option>
-            <option value="2560x1440">1440p 横屏</option>
-            <option value="3840x2160">4K 横屏</option>
-            <option value="1080x1920">1080p 竖屏</option>
-            <option value="2160x3840">4K 竖屏</option>
-          </select>
-        </label>
-        <label>帧率
-          <select id="fps"><option>24</option><option selected>30</option><option>60</option></select>
-        </label>
+        <label>旋转轴<select id="orbitAxis"><option value="y" selected>水平 · Y 轴</option><option value="x">垂直前后 · X 轴</option><option value="z">垂直左右 · Z 轴</option><option value="custom">自定义倾斜轴</option></select></label>
+        <label>方向<select id="orbitDirection"><option value="1" selected>正向旋转</option><option value="-1">反向旋转</option></select></label>
       </div>
-      <label>视频码率
-        <select id="bitrate">
-          <option value="12000000">12 Mbps</option>
-          <option value="25000000" selected>25 Mbps</option>
-          <option value="50000000">50 Mbps</option>
-          <option value="80000000">80 Mbps</option>
-        </select>
-      </label>
-      <p class="format" id="formatHint">正在检测 MP4 硬件编码能力…</p>
+      <label>旋转圈数 <output id="orbitTurnsOut">1.00 圈</output><input id="orbitTurns" type="range" min="0.25" max="3" step="0.05" value="1"></label>
+      <label>圆弧角度 <output id="arcDegreesOut">120°</output><input id="arcDegrees" type="range" min="10" max="350" step="1" value="120"></label>
+      <div class="grid-two">
+        <label>轴方位 <output id="axisAzimuthOut">0°</output><input id="axisAzimuth" type="range" min="-180" max="180" step="1" value="0" disabled></label>
+        <label>轴仰角 <output id="axisElevationOut">45°</output><input id="axisElevation" type="range" min="-90" max="90" step="1" value="45" disabled></label>
+      </div>
+      <div class="subsection-title">起始机位</div>
+      <div class="grid-two">
+        <label>起始方位角 <output id="startYawOut">32°</output><input id="startYaw" type="range" min="-180" max="180" step="1" value="32"></label>
+        <label>起始俯仰角 <output id="startPitchOut">9°</output><input id="startPitch" type="range" min="-89" max="89" step="1" value="9"></label>
+      </div>
+      <div class="grid-two">
+        <label>起始距离 <output id="startDistanceOut">1.00×</output><input id="startDistance" type="range" min="0.25" max="5" step="0.05" value="1"></label>
+        <label>结束距离 <output id="endDistanceOut">0.65×</output><input id="endDistance" type="range" min="0.25" max="3" step="0.05" value="0.65"></label>
+      </div>
+      <label>镜头视野 FOV <output id="cameraFovOut">50°</output><input id="cameraFov" type="range" min="20" max="100" step="1" value="50"></label>
+      <div class="subsection-title">轨迹圆心（相对模型半径）</div>
+      <label>中心 X <output id="centerXOut">0.00</output><input id="centerX" type="range" min="-2" max="2" step="0.01" value="0"></label>
+      <label>中心 Y <output id="centerYOut">0.00</output><input id="centerY" type="range" min="-2" max="2" step="0.01" value="0"></label>
+      <label>中心 Z <output id="centerZOut">0.00</output><input id="centerZ" type="range" min="-2" max="2" step="0.01" value="0"></label>
+      <div class="subsection-title">视角跟随点</div>
+      <label>看向方式<select id="lookAtMode"><option value="custom" selected>自定义跟随点</option><option value="center">始终看向轨迹圆心</option><option value="model">始终看向模型中心</option></select></label>
+      <label>跟随点 X <output id="followXOut">0.00</output><input id="followX" type="range" min="-2" max="2" step="0.01" value="0"></label>
+      <label>跟随点 Y <output id="followYOut">0.00</output><input id="followY" type="range" min="-2" max="2" step="0.01" value="0"></label>
+      <label>跟随点 Z <output id="followZOut">0.00</output><input id="followZ" type="range" min="-2" max="2" step="0.01" value="0"></label>
+      <div class="subsection-title">镜头自身旋转（Roll）</div>
+      <div class="grid-two">
+        <label>起始滚转角 <output id="cameraRollOut">0°</output><input id="cameraRoll" type="range" min="-180" max="180" step="1" value="0"></label>
+        <label>结束滚转角 <output id="cameraRollEndOut">0°</output><input id="cameraRollEnd" type="range" min="-720" max="720" step="1" value="0"></label>
+      </div>
+      <p class="format">起止角相同为固定画面倾斜；不同则沿视线轴连续滚转。</p>
+      <label class="check"><input id="autoCamera" type="checkbox" checked><span>播放时预览拍摄轨迹（渲染始终启用）</span></label>
+      <label class="check"><input id="showTrajectory" type="checkbox" checked><span>显示三维轨迹（录制时隐藏）</span></label>
+      <p class="format">蓝：轨迹　绿：起点　红：终点　黄：当前位置　紫：轨迹圆心　青：视角跟随点</p>
+      <label class="check"><input id="loop" type="checkbox"><span>循环预览</span></label>
+      <button id="resetView" class="sub-button">复位手动视角</button>
+    </section>
+
+    <section>
+      <div class="section-title"><span>04</span>渲染与输出</div>
+      <label>实时渲染质量<select id="renderQuality"><option value="quality" selected>高质量 · 完整 SH / 最高像素比</option><option value="balanced">平衡 · 完整 SH / 中等像素比</option><option value="preview">流畅预览 · 基础 SH / 低像素比</option></select></label>
+      <div class="grid-two">
+        <label>分辨率<select id="resolution"><option value="1920x1080" selected>1080p 横屏</option><option value="2560x1440">1440p 横屏</option><option value="3840x2160">4K 横屏</option><option value="1080x1920">1080p 竖屏</option><option value="2160x3840">4K 竖屏</option></select></label>
+        <label>帧率<select id="fps"><option>24</option><option selected>30</option><option>60</option></select></label>
+      </div>
+      <label>视频码率<select id="bitrate"><option value="12000000">12 Mbps</option><option value="25000000" selected>25 Mbps</option><option value="50000000">50 Mbps</option><option value="80000000">80 Mbps</option></select></label>
+      <button id="applyRenderSettings" class="sub-button apply-button">应用当前渲染设置</button>
+      <div id="renderState" class="render-state pending">设置尚未应用</div>
+      <p class="format" id="formatHint">正在检测视频编码能力…</p>
     </section>
   </aside>
 
-  <div class="timeline glass">
-    <button id="restart" class="icon-button" disabled title="回到开头">↺</button>
-    <span id="timeLabel">00:00.0</span>
-    <input id="timeline" type="range" min="0" max="1" step="0.001" value="0" disabled>
-    <span id="durationLabel">00:08.0</span>
-  </div>
-
-  <div class="hud">
-    <span id="status">等待导入模型</span>
-    <span id="stats">WebGL2</span>
-  </div>
-
-  <div id="loading" class="loading hidden">
-    <div class="loader-ring"></div>
-    <strong id="loadingTitle">正在读取模型</strong>
-    <span id="loadingText">0%</span>
-    <div class="progress"><i id="progressBar"></i></div>
-  </div>
-
+  <div class="timeline glass"><button id="restart" class="icon-button" disabled title="回到开头">↺</button><span id="timeLabel">00:00.0</span><input id="timeline" type="range" min="0" max="1" step="0.001" value="0" disabled><span id="durationLabel">00:08.0</span></div>
+  <div class="hud"><span id="status">等待导入模型</span><span id="stats">WebGL2</span></div>
+  <div id="loading" class="loading hidden"><div class="loader-ring"></div><strong id="loadingTitle">正在读取模型</strong><span id="loadingText">0%</span><div class="progress"><i id="progressBar"></i></div></div>
   <div id="toast" class="toast"></div>
   <script src="playcanvas.min.js?v=2.19.7"></script>
-  <script src="app.js?v=20260623-full"></script>
+  <script src="app.js?v=20260623-camera4"></script>
 </body>
 </html>

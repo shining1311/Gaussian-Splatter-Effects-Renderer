@@ -10,7 +10,7 @@ using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace RemySplatStudio
+namespace GaussianSplatterEffectsStudio
 {
     internal sealed class LocalServer : IDisposable
     {
@@ -34,7 +34,7 @@ namespace RemySplatStudio
             listener = new TcpListener(IPAddress.Loopback, 0);
             listener.Start();
             Port = ((IPEndPoint)listener.LocalEndpoint).Port;
-            acceptThread = new Thread(AcceptLoop) { IsBackground = true, Name = "RemySplatStudio.Server" };
+            acceptThread = new Thread(AcceptLoop) { IsBackground = true, Name = "GaussianSplatterEffectsStudio.Server" };
             acceptThread.Start();
         }
 
@@ -81,6 +81,7 @@ namespace RemySplatStudio
                     byte[] bytes = ReadResource(resourceName);
                     string mime = resourceName.EndsWith(".js") ? "text/javascript; charset=utf-8" :
                                   resourceName.EndsWith(".css") ? "text/css; charset=utf-8" :
+                                  resourceName.EndsWith(".txt") ? "text/plain; charset=utf-8" :
                                   "text/html; charset=utf-8";
                     WriteResponse(stream, 200, mime, bytes);
                 }
@@ -130,8 +131,8 @@ namespace RemySplatStudio
 
         public LauncherForm()
         {
-            Text = "Remy Splat Studio";
-            ClientSize = new Size(460, 225);
+            Text = "GaussianSplatterEffectsStudio";
+            ClientSize = new Size(560, 225);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
@@ -144,15 +145,15 @@ namespace RemySplatStudio
 
             Label title = new Label
             {
-                Text = "Remy Splat Studio",
-                Font = new Font("Microsoft YaHei UI", 19F, FontStyle.Bold),
+                Text = "GaussianSplatterEffectsStudio",
+                Font = new Font("Microsoft YaHei UI", 17F, FontStyle.Bold),
                 ForeColor = Color.FromArgb(102, 224, 255),
                 AutoSize = true,
                 Location = new Point(28, 24)
             };
             Label text = new Label
             {
-                Text = "高斯粒子动画与高画质视频导出\n界面将在 Microsoft Edge 独立窗口中运行，所有文件仅在本机处理。",
+                Text = "完整高斯渲染、多样化粒子特效、电影运镜与高画质视频导出\n界面将在 Microsoft Edge 独立窗口中运行，所有文件仅在本机处理。",
                 AutoSize = true,
                 Location = new Point(31, 76),
                 ForeColor = Color.FromArgb(200, 208, 218)
@@ -198,7 +199,7 @@ namespace RemySplatStudio
             string edge = FindEdge();
             if (edge == null)
             {
-                MessageBox.Show("未找到 Microsoft Edge。请安装 Edge 后重试。", "Remy Splat Studio", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("未找到 Microsoft Edge。请安装 Edge 后重试。", "GaussianSplatterEffectsStudio", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
             ProcessStartInfo info = new ProcessStartInfo(edge,
