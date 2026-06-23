@@ -1,4 +1,4 @@
-# Remy Splat Studio
+# Gaussian Splatter Effects Renderer
 
 本地 3D 高斯泼溅动画与视频制作器。它直接读取 MipMap 导出的二进制 PLY，用完整椭球投影、透明度合成、相机深度排序和球谐颜色渲染模型，并通过 GPU 生成粒子聚合动画。
 
