@@ -62,15 +62,22 @@ namespace GaussianSplatterEffectsStudio
             {
                 try
                 {
-                    stream.ReadTimeout = 5000;
-                    StreamReader reader = new StreamReader(stream, Encoding.ASCII, false, 4096, true);
-                    string requestLine = reader.ReadLine();
+                    stream.ReadTimeout = 120000;
+                    HttpRequest request = ReadRequest(stream);
+                    if (request == null) return;
+                    string requestLine = request.RequestLine;
                     if (String.IsNullOrEmpty(requestLine)) return;
-                    string line;
-                    do { line = reader.ReadLine(); } while (!String.IsNullOrEmpty(line));
 
                     string[] parts = requestLine.Split(' ');
-                    string path = parts.Length > 1 ? parts[1].Split('?')[0] : "/";
+                    string method = parts.Length > 0 ? parts[0] : "GET";
+                    string target = parts.Length > 1 ? parts[1] : "/";
+                    string path = target.Split('?')[0];
+                    if (path.StartsWith("/api/remux", StringComparison.OrdinalIgnoreCase))
+                    {
+                        HandleRemuxApi(stream, method, target, request.Body);
+                        return;
+                    }
+
                     string resourceName;
                     if (!resources.TryGetValue(path, out resourceName))
                     {
@@ -89,6 +96,185 @@ namespace GaussianSplatterEffectsStudio
             }
         }
 
+        private static HttpRequest ReadRequest(NetworkStream stream)
+        {
+            MemoryStream raw = new MemoryStream();
+            byte[] buffer = new byte[8192];
+            int headerEnd = -1;
+            while (headerEnd < 0)
+            {
+                int read = stream.Read(buffer, 0, buffer.Length);
+                if (read <= 0) return null;
+                raw.Write(buffer, 0, read);
+                byte[] bytes = raw.ToArray();
+                headerEnd = FindHeaderEnd(bytes);
+                if (bytes.Length > 1024 * 1024) throw new InvalidOperationException("Request header too large");
+            }
+
+            byte[] all = raw.ToArray();
+            string headerText = Encoding.ASCII.GetString(all, 0, headerEnd);
+            string[] lines = headerText.Split(new[] { "\r\n" }, StringSplitOptions.None);
+            int contentLength = 0;
+            for (int i = 1; i < lines.Length; i++)
+            {
+                int colon = lines[i].IndexOf(':');
+                if (colon <= 0) continue;
+                string name = lines[i].Substring(0, colon).Trim();
+                string value = lines[i].Substring(colon + 1).Trim();
+                if (name.Equals("Content-Length", StringComparison.OrdinalIgnoreCase))
+                    Int32.TryParse(value, out contentLength);
+            }
+
+            byte[] body = new byte[contentLength];
+            int bodyStart = headerEnd + 4;
+            int already = Math.Max(0, Math.Min(contentLength, all.Length - bodyStart));
+            if (already > 0) Buffer.BlockCopy(all, bodyStart, body, 0, already);
+            while (already < contentLength)
+            {
+                int read = stream.Read(body, already, contentLength - already);
+                if (read <= 0) break;
+                already += read;
+            }
+            return new HttpRequest { RequestLine = lines.Length > 0 ? lines[0] : "", Body = body };
+        }
+
+        private static int FindHeaderEnd(byte[] bytes)
+        {
+            for (int i = 3; i < bytes.Length; i++)
+            {
+                if (bytes[i - 3] == 13 && bytes[i - 2] == 10 && bytes[i - 1] == 13 && bytes[i] == 10)
+                    return i - 3;
+            }
+            return -1;
+        }
+
+        private void HandleRemuxApi(NetworkStream stream, string method, string target, byte[] body)
+        {
+            if (target.StartsWith("/api/remux/status", StringComparison.OrdinalIgnoreCase))
+            {
+                WriteResponse(stream, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes("{\"ok\":true,\"ffmpeg\":" + JsonString(FindFfmpeg()) + "}"));
+                return;
+            }
+            if (!method.Equals("POST", StringComparison.OrdinalIgnoreCase))
+            {
+                WriteResponse(stream, 405, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("Method not allowed"));
+                return;
+            }
+            string ffmpeg = FindFfmpeg();
+            if (ffmpeg == null)
+            {
+                WriteResponse(stream, 500, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("未找到 ffmpeg.exe，无法无损修复索引。"));
+                return;
+            }
+            Dictionary<string, string> query = ParseQuery(target);
+            string filename = query.ContainsKey("filename") ? query["filename"] : "rendered.webm";
+            string ext = Path.GetExtension(filename).ToLowerInvariant();
+            if (ext != ".mp4" && ext != ".webm" && ext != ".mkv") ext = ".webm";
+            string id = DateTime.Now.ToString("yyyyMMddHHmmss") + "-" + Guid.NewGuid().ToString("N").Substring(0, 8);
+            string dir = Path.Combine(Path.GetTempPath(), "GaussianSplatterEffectsStudio", "remux-" + id);
+            Directory.CreateDirectory(dir);
+            string input = Path.Combine(dir, "input" + ext);
+            string output = Path.Combine(dir, "seekable" + ext);
+            File.WriteAllBytes(input, body ?? new byte[0]);
+            string error = RemuxWithFfmpeg(ffmpeg, input, output);
+            if (error != null)
+            {
+                WriteResponse(stream, 500, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes(error));
+                return;
+            }
+            WriteDownload(stream, output, "video/" + (ext == ".mp4" ? "mp4" : "webm"), MakeSeekableName(filename, ext));
+        }
+
+        private static string RemuxWithFfmpeg(string ffmpeg, string input, string output)
+        {
+            string args = "-y -hide_banner -loglevel error -i \"" + input + "\" -map 0 -c copy \"" + output + "\"";
+            ProcessStartInfo info = new ProcessStartInfo(ffmpeg, args)
+            {
+                UseShellExecute = false,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+            using (Process process = Process.Start(info))
+            {
+                string error = process.StandardError.ReadToEnd();
+                process.WaitForExit();
+                if (process.ExitCode == 0 && File.Exists(output) && new FileInfo(output).Length > 0) return null;
+                return String.IsNullOrWhiteSpace(error) ? "FFmpeg 无损重封装失败" : error.Trim();
+            }
+        }
+
+        private static string MakeSeekableName(string filename, string ext)
+        {
+            string name = Path.GetFileNameWithoutExtension(filename);
+            if (String.IsNullOrWhiteSpace(name)) name = "GaussianSplatterEffectsStudio";
+            return name + "_seekable" + ext;
+        }
+
+        private static Dictionary<string, string> ParseQuery(string target)
+        {
+            Dictionary<string, string> result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            int q = target.IndexOf('?');
+            if (q < 0) return result;
+            string[] pairs = target.Substring(q + 1).Split('&');
+            foreach (string pair in pairs)
+            {
+                if (String.IsNullOrEmpty(pair)) continue;
+                int eq = pair.IndexOf('=');
+                string key = eq >= 0 ? pair.Substring(0, eq) : pair;
+                string value = eq >= 0 ? pair.Substring(eq + 1) : "";
+                result[Uri.UnescapeDataString(key)] = Uri.UnescapeDataString(value.Replace("+", " "));
+            }
+            return result;
+        }
+
+        private static string FindFfmpeg()
+        {
+            string exeDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            string local = Path.Combine(exeDir, "ffmpeg.exe");
+            if (File.Exists(local)) return local;
+            string winget = FindNewestFfmpegIn(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "WinGet", "Packages"));
+            if (winget != null) return winget;
+            string path = Environment.GetEnvironmentVariable("PATH") ?? "";
+            foreach (string dir in path.Split(Path.PathSeparator))
+            {
+                try
+                {
+                    if (String.IsNullOrWhiteSpace(dir)) continue;
+                    string candidate = Path.Combine(dir.Trim(), "ffmpeg.exe");
+                    if (File.Exists(candidate)) return candidate;
+                }
+                catch { }
+            }
+            return null;
+        }
+
+        private static string FindNewestFfmpegIn(string root)
+        {
+            try
+            {
+                if (!Directory.Exists(root)) return null;
+                string best = null;
+                DateTime bestTime = DateTime.MinValue;
+                foreach (string file in Directory.GetFiles(root, "ffmpeg.exe", SearchOption.AllDirectories))
+                {
+                    DateTime time = File.GetLastWriteTime(file);
+                    if (best == null || time > bestTime)
+                    {
+                        best = file;
+                        bestTime = time;
+                    }
+                }
+                return best;
+            }
+            catch { return null; }
+        }
+
+        private static string JsonString(string value)
+        {
+            if (value == null) return "null";
+            return "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "\\r").Replace("\n", "\\n") + "\"";
+        }
+
         private static byte[] ReadResource(string name)
         {
             Assembly assembly = Assembly.GetExecutingAssembly();
@@ -105,7 +291,7 @@ namespace GaussianSplatterEffectsStudio
 
         private static void WriteResponse(Stream stream, int status, string mime, byte[] body)
         {
-            string reason = status == 200 ? "OK" : "Not Found";
+            string reason = status == 200 ? "OK" : status == 404 ? "Not Found" : status == 405 ? "Method Not Allowed" : "Error";
             string headers = "HTTP/1.1 " + status + " " + reason + "\r\n" +
                              "Content-Type: " + mime + "\r\n" +
                              "Content-Length: " + body.Length + "\r\n" +
@@ -115,6 +301,27 @@ namespace GaussianSplatterEffectsStudio
             byte[] head = Encoding.ASCII.GetBytes(headers);
             stream.Write(head, 0, head.Length);
             stream.Write(body, 0, body.Length);
+        }
+
+        private static void WriteDownload(Stream stream, string path, string mime, string filename)
+        {
+            byte[] body = File.ReadAllBytes(path);
+            filename = (filename ?? Path.GetFileName(path)).Replace("\"", "");
+            string headers = "HTTP/1.1 200 OK\r\n" +
+                             "Content-Type: " + mime + "\r\n" +
+                             "Content-Disposition: attachment; filename=\"" + filename + "\"\r\n" +
+                             "Content-Length: " + body.Length + "\r\n" +
+                             "Cache-Control: no-store\r\n" +
+                             "Connection: close\r\n\r\n";
+            byte[] head = Encoding.ASCII.GetBytes(headers);
+            stream.Write(head, 0, head.Length);
+            stream.Write(body, 0, body.Length);
+        }
+
+        private sealed class HttpRequest
+        {
+            public string RequestLine;
+            public byte[] Body;
         }
 
         public void Dispose()

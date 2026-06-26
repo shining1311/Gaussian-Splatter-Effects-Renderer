@@ -10,6 +10,7 @@ const rad = d => d * Math.PI / 180;
 const mix = (a, b, t) => a + (b - a) * t;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
+const FFMPEG_INSTALL_HELP_HTML = "未检测到 FFmpeg，因此当前导出保留原始 WebM。若希望默认导出可拖动版本，请安装 FFmpeg 后重新打开本程序：<br>方法一：打开 Windows 终端，执行 <code>winget install --id Gyan.FFmpeg -e --source winget</code><br>方法二：下载 FFmpeg，把 <code>ffmpeg.exe</code> 放到 <code>GaussianSplatterEffectsStudio.exe</code> 同一文件夹。<br>说明：本项目不内置 FFmpeg，只调用用户设备上的外部程序做无损重封装。";
 
 function concatBuffers(parts) {
     const size = parts.reduce((sum, p) => sum + p.byteLength, 0);
@@ -1296,15 +1297,44 @@ class Studio {
         this.toast(`开始所见即所得录制 ${w}×${h} / ${fps} FPS · ${this.recordMime[1]}`);
     }
 
-    showRenderedVideo(blob, filename, width, height, fps) {
+    async makeSeekableBlob(blob, filename) {
+        try {
+            const status = await fetch("/api/remux/status").then(r => r.json());
+            if (!status?.ffmpeg) {
+                this.toast("未检测到 FFmpeg，已保留原始导出文件");
+                return { blob, filename, seekable: false, helpHtml: FFMPEG_INSTALL_HELP_HTML };
+            }
+            this.toast("正在自动生成可拖动版本（无损重封装）…");
+            const response = await fetch(`/api/remux?filename=${encodeURIComponent(filename)}`, {
+                method: "POST",
+                headers: { "Content-Type": blob.type || "application/octet-stream" },
+                body: blob
+            });
+            if (!response.ok) throw new Error(await response.text());
+            const fixed = await response.blob();
+            const fixedName = filename.replace(/(\.[^.]+)?$/, (m) => `_seekable${m || ".webm"}`);
+            return { blob: fixed, filename: fixedName, seekable: true };
+        } catch (err) {
+            console.warn(err);
+            this.toast(`无损重封装失败，保留原始文件：${err?.message || err}`);
+            return { blob, filename, seekable: false, helpHtml: `无损重封装失败：${err?.message || err}<br><br>${FFMPEG_INSTALL_HELP_HTML}` };
+        }
+    }
+
+    async showRenderedVideo(blob, filename, width, height, fps) {
+        const result = await this.makeSeekableBlob(blob, filename);
+        blob = result.blob;
+        filename = result.filename;
         if (this.renderVideoUrl) URL.revokeObjectURL(this.renderVideoUrl);
         this.renderVideoUrl = URL.createObjectURL(blob);
         const win = this.renderWindow && !this.renderWindow.closed ? this.renderWindow : window.open("", "GaussianSplatterEffectsStudioRender", "width=1100,height=760,resizable=yes");
         if (!win) return this.toast("视频已生成，但预览窗口被拦截");
         win.document.open();
-        win.document.write(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>渲染完成 · ${filename}</title><style>html,body{min-height:100%;margin:0;background:#080b0f;color:#eef7fb;font-family:"Microsoft YaHei UI",sans-serif}.wrap{max-width:1100px;margin:auto;padding:24px}.head{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:16px}h2{margin:0;font-size:18px}p{margin:5px 0 0;color:#8b99a8;font-size:12px}video{display:block;width:100%;max-height:70vh;background:#000;border:1px solid #26333d;border-radius:12px}.export{display:inline-flex;align-items:center;height:40px;padding:0 18px;border-radius:9px;background:linear-gradient(135deg,#198eaa,#21609b);color:white;text-decoration:none;font-size:13px;white-space:nowrap}.hint{margin-top:10px;color:#8b99a8;font-size:12px}</style><body><div class="wrap"><div class="head"><div><h2>视频渲染完成</h2><p>${width}×${height} · ${fps} FPS · ${(blob.size / 1048576).toFixed(1)} MB</p></div><a class="export" href="${this.renderVideoUrl}" download="${filename}">导出视频</a></div><video id="renderedVideo" src="${this.renderVideoUrl}" controls autoplay loop></video><div class="hint" id="seekHint">如果进度条暂时不能拖动，正在尝试修复视频时长元数据…</div></div><script>const v=document.getElementById("renderedVideo"),hint=document.getElementById("seekHint");function done(t){if(hint)hint.textContent=t;}function fix(){if(!v)return;const bad=!Number.isFinite(v.duration)||Number.isNaN(v.duration);if(!bad){done("预览视频已可拖动；若下载后的 WebM 在其他播放器不能拖动，建议用支持 WebM 索引的播放器打开。");return;}let old=0;try{old=v.currentTime||0;v.addEventListener("timeupdate",function once(){v.removeEventListener("timeupdate",once);try{v.currentTime=old;}catch(e){}done("已尝试修复预览拖动；下载后的浏览器实时录制 WebM 若仍不能拖动，是录制封装缺索引导致。");},{once:true});v.currentTime=1e101;}catch(e){done("当前浏览器没有暴露可修复的时长元数据。");}}v.addEventListener("loadedmetadata",fix,{once:true});setTimeout(fix,800);</script></body></html>`);
+        const seekText = result.seekable ? "已自动无损重封装为可拖动版本；视频画质未重新编码。" : (result.helpHtml || FFMPEG_INSTALL_HELP_HTML);
+        win.document.write(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>渲染完成 · ${filename}</title><style>html,body{min-height:100%;margin:0;background:#080b0f;color:#eef7fb;font-family:"Microsoft YaHei UI",sans-serif}.wrap{max-width:1100px;margin:auto;padding:24px}.head{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:16px}h2{margin:0;font-size:18px}p{margin:5px 0 0;color:#8b99a8;font-size:12px}video{display:block;width:100%;max-height:70vh;background:#000;border:1px solid #26333d;border-radius:12px}.export{display:inline-flex;align-items:center;height:40px;padding:0 18px;border-radius:9px;background:linear-gradient(135deg,#198eaa,#21609b);color:white;text-decoration:none;font-size:13px;white-space:nowrap}.hint{margin-top:10px;color:#8b99a8;font-size:12px}</style><body><div class="wrap"><div class="head"><div><h2>视频渲染完成</h2><p>${width}×${height} · ${fps} FPS · ${(blob.size / 1048576).toFixed(1)} MB</p></div><a id="exportLink" class="export" href="${this.renderVideoUrl}" download="${filename}">导出视频</a></div><video id="renderedVideo" src="${this.renderVideoUrl}" controls autoplay loop></video><div class="hint" id="seekHint">${seekText}</div></div><script>const v=document.getElementById("renderedVideo"),hint=document.getElementById("seekHint");function done(t){if(hint)hint.textContent=t;}function fix(){if(!v)return;const bad=!Number.isFinite(v.duration)||Number.isNaN(v.duration);if(!bad)return;let old=0;try{old=v.currentTime||0;v.addEventListener("timeupdate",function once(){v.removeEventListener("timeupdate",once);try{v.currentTime=old;}catch(e){}},{once:true});v.currentTime=1e101;}catch(e){}}v.addEventListener("loadedmetadata",fix,{once:true});setTimeout(fix,800);</script></body></html>`);
         win.document.close();
         win.focus();
+        if (result.seekable) this.toast("已自动生成可拖动版本（无损，不改变画质）");
     }
 
     async startRecording() {

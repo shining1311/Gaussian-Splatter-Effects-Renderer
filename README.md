@@ -82,6 +82,7 @@
 - 分辨率选择“当前预览尺寸”时，实时录制不会为了导出而强行重设画布大小，通常比固定 1080p/4K 更顺滑。
 - “精确帧率逐帧导出”采用固定时间码逐帧 WebM：即使单帧渲染速度慢于实时播放，生成文件仍保持选择的 30/60 FPS；但它是全关键帧封装，播放器解码压力更大，某些播放器里可能不如实时录制顺滑。
 - 逐帧导出的 WebM 会写入 Cues 索引，通常可以拖动进度条。浏览器实时录制的 WebM 由 `MediaRecorder` 生成，某些播放器可能因为缺少完整索引而不能拖动；预览窗口会自动尝试修复时长元数据。
+- 导出完成后，如果本机能找到 FFmpeg，程序会自动执行 `-c copy` 无损重封装，默认提供带 `_seekable` 的可拖动版本。该步骤只重写容器索引，不重新编码，因此不会改变原视频画质。
 - 预览窗口显示的实时 FPS 只代表当前编辑/播放速度；最终视频应以导出模式为准。
 - 逐帧导出时，码率选项会映射为 WebP/VP8 帧质量；更高码率会提高画质，也会增加 4K 导出时间和内存占用。
 
@@ -90,6 +91,21 @@
 - Windows 10/11、Microsoft Edge、支持 WebGL2 的显卡。
 - 启动器请求 Edge 使用 D3D11 高性能 GPU；最终显卡选择仍受 Windows 和显卡控制面板影响。
 - 模型只在本机读取和渲染，不会上传网络。
+- FFmpeg 不是本项目内置组件。若用户希望导出的浏览器录制 WebM 默认可拖动，需要在系统 PATH 中安装 FFmpeg，或把 `ffmpeg.exe` 放到程序同目录。程序仅作为外部命令调用它做无损重封装。
+
+安装 FFmpeg 的推荐方法：
+
+```powershell
+winget install --id Gyan.FFmpeg -e --source winget
+```
+
+安装完成后关闭并重新打开 GaussianSplatterEffectsStudio。若 `winget` 不可用，也可以手动下载 FFmpeg，把 `bin/ffmpeg.exe` 复制到 `GaussianSplatterEffectsStudio.exe` 同一文件夹。
+
+## 开源与许可证
+
+- 本项目自己的启动器、界面和特效代码可以使用你选择的开源许可证发布。
+- PlayCanvas Engine 使用 MIT License；发布时需要保留 `web/PLAYCANVAS-LICENSE.txt`。
+- 不建议把 Gyan/FFmpeg 的完整构建直接打包进你的仓库或 EXE。FFmpeg 构建可能包含 GPL 组件；若捆绑分发，会带来额外许可证义务。当前设计只检测并调用用户设备上已有的 `ffmpeg.exe`，不把 FFmpeg 作为本项目源码的一部分。
 
 重新打包：
 
