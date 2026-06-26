@@ -389,10 +389,6 @@ winget install --id Gyan.FFmpeg -e --source winget
 
 ## 开源与许可证
 
-- 本项目自己的启动器、界面和特效代码可以使用你选择的开源许可证发布。
-- PlayCanvas Engine 使用 MIT License；发布时需要保留 `web/PLAYCANVAS-LICENSE.txt`。
-- 不建议把 Gyan/FFmpeg 的完整构建直接打包进你的仓库或 EXE。FFmpeg 构建可能包含 GPL 组件；若捆绑分发，会带来额外许可证义务。当前设计只检测并调用用户设备上已有的 `ffmpeg.exe`，不把 FFmpeg 作为本项目源码的一部分。
-
 重新打包：
 
 ```powershell
