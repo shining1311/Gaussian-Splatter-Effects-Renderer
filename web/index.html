@@ -30,7 +30,7 @@
       <div class="section-title"><span>02</span>高斯特效</div>
       <label>特效预设
         <select id="effectPreset">
-          <option value="0" selected>爆散聚合 · Particle Burst</option><option value="1">扫描显形 · Radial Scan</option><option value="2">粒子雨 · Particle Rain</option><option value="3">旋涡聚合 · Vortex Assemble</option><option value="4">晶格拼装 · Grid Build</option><option value="5">尘埃升腾 · Dust Rise</option><option value="6">能量脉冲 · Energy Pulse</option>
+          <option value="0" selected>爆散聚合 · Particle Burst</option><option value="1">扫描显形 · Radial Scan</option><option value="2">粒子雨 · Particle Rain</option><option value="3">旋涡聚合 · Vortex Assemble</option><option value="4">晶格拼装 · Grid Build</option><option value="5">尘埃升腾 · Dust Rise</option><option value="6">能量脉冲 · Energy Pulse</option><option value="7">故障切片 · Glitch Slices</option><option value="8">光环扫描 · Neon Ring Scan</option><option value="9">传送门旋入 · Portal Spiral</option><option value="10">烟花聚合 · Firework Assemble</option><option value="11">分层剥离 · Layer Peel</option><option value="12">呼吸辉光 · Breathing Glow</option>
         </select>
       </label>
       <label>时长 <output id="durationOut">8.0 秒</output><input id="duration" type="range" min="3" max="20" step="0.5" value="8"></label>
@@ -92,10 +92,11 @@
       <div class="section-title"><span>04</span>渲染与输出</div>
       <label>实时渲染质量<select id="renderQuality"><option value="quality" selected>高质量 · 完整 SH / 最高像素比</option><option value="balanced">平衡 · 完整 SH / 中等像素比</option><option value="preview">流畅预览 · 基础 SH / 低像素比</option></select></label>
       <div class="grid-two">
-        <label>分辨率<select id="resolution"><option value="1920x1080" selected>1080p 横屏</option><option value="2560x1440">1440p 横屏</option><option value="3840x2160">4K 横屏</option><option value="1080x1920">1080p 竖屏</option><option value="2160x3840">4K 竖屏</option></select></label>
-        <label>帧率<select id="fps"><option>24</option><option selected>30</option><option>60</option></select></label>
+        <label>分辨率<select id="resolution"><option value="current">当前预览尺寸 · 最顺滑</option><option value="1920x1080" selected>1080p 横屏</option><option value="2560x1440">1440p 横屏</option><option value="3840x2160">4K 横屏</option><option value="1080x1920">1080p 竖屏</option><option value="2160x3840">4K 竖屏</option></select></label>
+        <label>帧率<select id="fps"><option>24</option><option selected>30</option><option>60</option><option>120</option></select></label>
       </div>
       <label>视频码率<select id="bitrate"><option value="12000000">12 Mbps</option><option value="25000000" selected>25 Mbps</option><option value="50000000">50 Mbps</option><option value="80000000">80 Mbps</option></select></label>
+      <label>导出模式<select id="exportMode"><option value="realtime" selected>所见即所得实时录制 · 最像网页预览</option><option value="fixed">精确帧率逐帧导出 · 帧数最准</option></select></label>
       <button id="applyRenderSettings" class="sub-button apply-button">应用当前渲染设置</button>
       <div id="renderState" class="render-state pending">设置尚未应用</div>
       <p class="format" id="formatHint">正在检测视频编码能力…</p>

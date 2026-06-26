@@ -8,6 +8,201 @@ const wrapAngle = a => Math.atan2(Math.sin(a), Math.cos(a));
 const deg = r => r * 180 / Math.PI;
 const rad = d => d * Math.PI / 180;
 const mix = (a, b, t) => a + (b - a) * t;
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
+
+function concatBuffers(parts) {
+    const size = parts.reduce((sum, p) => sum + p.byteLength, 0);
+    const out = new Uint8Array(size);
+    let offset = 0;
+    for (const part of parts) {
+        out.set(part, offset);
+        offset += part.byteLength;
+    }
+    return out;
+}
+
+function asciiBuffer(str) {
+    const out = new Uint8Array(str.length);
+    for (let i = 0; i < str.length; i++) out[i] = str.charCodeAt(i);
+    return out;
+}
+
+function numberBuffer(num) {
+    if (num === 0) return new Uint8Array([0]);
+    const bytes = [];
+    while (num > 0) {
+        bytes.unshift(num & 255);
+        num = Math.floor(num / 256);
+    }
+    return new Uint8Array(bytes);
+}
+
+function float64Buffer(num) {
+    const buffer = new ArrayBuffer(8);
+    new DataView(buffer).setFloat64(0, num, false);
+    return new Uint8Array(buffer);
+}
+
+function ebmlSizeBuffer(size) {
+    let length = 1;
+    while (length < 8 && size >= Math.pow(2, 7 * length) - 1) length++;
+    const out = new Uint8Array(length);
+    for (let i = length - 1, value = size; i >= 0; i--) {
+        out[i] = value & 255;
+        value = Math.floor(value / 256);
+    }
+    out[0] |= 1 << (8 - length);
+    return out;
+}
+
+function encodeEBML(elements) {
+    const buffers = [];
+    for (const element of elements) {
+        const id = numberBuffer(element.id);
+        let data;
+        if (Array.isArray(element.data)) data = encodeEBML(element.data);
+        else if (typeof element.data === "string") data = asciiBuffer(element.data);
+        else if (typeof element.data === "number") data = element.float ? float64Buffer(element.data) : numberBuffer(element.data);
+        else data = element.data;
+        buffers.push(id, ebmlSizeBuffer(data.byteLength), data);
+    }
+    return concatBuffers(buffers);
+}
+
+function readFourCC(bytes, offset) {
+    return String.fromCharCode(bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
+}
+
+function readUInt32LE(bytes, offset) {
+    return bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24);
+}
+
+function extractVP8FromWebP(buffer) {
+    const bytes = new Uint8Array(buffer);
+    if (readFourCC(bytes, 0) !== "RIFF" || readFourCC(bytes, 8) !== "WEBP") {
+        throw new Error("浏览器没有生成有效的 WebP 帧");
+    }
+    for (let offset = 12; offset + 8 <= bytes.length;) {
+        const fourCC = readFourCC(bytes, offset);
+        const size = readUInt32LE(bytes, offset + 4);
+        const dataOffset = offset + 8;
+        if (fourCC === "VP8 ") {
+            const frame = bytes.slice(dataOffset, dataOffset + size);
+            if (frame[3] !== 0x9d || frame[4] !== 0x01 || frame[5] !== 0x2a) {
+                throw new Error("WebP 帧不是 VP8 关键帧，无法封装为固定帧率 WebM");
+            }
+            const width = frame[6] | ((frame[7] & 0x3f) << 8);
+            const height = frame[8] | ((frame[9] & 0x3f) << 8);
+            return { frame, width, height };
+        }
+        if (fourCC === "VP8L") {
+            throw new Error("当前浏览器输出了无损 WebP，暂不能精确封装");
+        }
+        offset = dataOffset + size + (size & 1);
+    }
+    throw new Error("WebP 中没有找到 VP8 视频帧");
+}
+
+function makeSimpleBlock(track, timecode, frame) {
+    const out = new Uint8Array(4 + frame.byteLength);
+    out[0] = 0x80 | track;
+    out[1] = (timecode >> 8) & 255;
+    out[2] = timecode & 255;
+    out[3] = 0x80;
+    out.set(frame, 4);
+    return out;
+}
+
+function ebmlHeader(id, dataSize) {
+    return concatBuffers([numberBuffer(id), ebmlSizeBuffer(dataSize)]);
+}
+
+function ebmlElement(id, data) {
+    return concatBuffers([ebmlHeader(id, data.byteLength), data]);
+}
+
+function makeFixedFpsWebM(frames, width, height, fps, durationMs) {
+    const ebml = encodeEBML([
+        { id: 0x1a45dfa3, data: [
+            { id: 0x4286, data: 1 },
+            { id: 0x42f7, data: 1 },
+            { id: 0x42f2, data: 4 },
+            { id: 0x42f3, data: 8 },
+            { id: 0x4282, data: "webm" },
+            { id: 0x4287, data: 2 },
+            { id: 0x4285, data: 2 }
+        ] }
+    ]);
+    const info = encodeEBML([
+        { id: 0x1549a966, data: [
+            { id: 0x2ad7b1, data: 1000000 },
+            { id: 0x4489, data: durationMs, float: true },
+            { id: 0x4d80, data: "GaussianSplatterEffectsStudio" },
+            { id: 0x5741, data: "GaussianSplatterEffectsStudio fixed-fps exporter" }
+        ] }
+    ]);
+    const tracks = encodeEBML([
+        { id: 0x1654ae6b, data: [
+            { id: 0xae, data: [
+                { id: 0xd7, data: 1 },
+                { id: 0x73c5, data: 1 },
+                { id: 0x9c, data: 0 },
+                { id: 0x22b59c, data: "und" },
+                { id: 0x86, data: "V_VP8" },
+                { id: 0x258688, data: "VP8" },
+                { id: 0x83, data: 1 },
+                { id: 0x23e383, data: Math.round(1000000000 / fps) },
+                { id: 0xe0, data: [
+                    { id: 0xb0, data: width },
+                    { id: 0xba, data: height }
+                ] }
+            ] }
+        ] }
+    ]);
+    const clusterBlobs = [];
+    let clusterStart = -1;
+    let clusterData = null;
+    let clusterDataSize = 0;
+    const finishCluster = () => {
+        if (!clusterData) return;
+        const header = ebmlHeader(0x1f43b675, clusterDataSize);
+        clusterBlobs.push({ timecode: clusterStart, size: header.byteLength + clusterDataSize, parts: [header, ...clusterData] });
+    };
+    for (const item of frames) {
+        if (clusterStart < 0 || item.timecode - clusterStart > 30000) {
+            finishCluster();
+            clusterStart = item.timecode;
+            const timecode = ebmlElement(0xe7, numberBuffer(clusterStart));
+            clusterData = [timecode];
+            clusterDataSize = timecode.byteLength;
+        }
+        const relativeTime = item.timecode - clusterStart;
+        const blockHeader = new Uint8Array([0x81, (relativeTime >> 8) & 255, relativeTime & 255, 0x80]);
+        const simpleHeader = ebmlHeader(0xa3, blockHeader.byteLength + item.frame.byteLength);
+        clusterData.push(simpleHeader, blockHeader, item.frame);
+        clusterDataSize += simpleHeader.byteLength + blockHeader.byteLength + item.frame.byteLength;
+    }
+    finishCluster();
+    let clusterOffset = info.byteLength + tracks.byteLength;
+    const cuePoints = [];
+    for (const cluster of clusterBlobs) {
+        cuePoints.push({ id: 0xbb, data: [
+            { id: 0xb3, data: cluster.timecode },
+            { id: 0xb7, data: [
+                { id: 0xf7, data: 1 },
+                { id: 0xf1, data: clusterOffset }
+            ] }
+        ] });
+        clusterOffset += cluster.size;
+    }
+    const cues = encodeEBML([{ id: 0x1c53bb6b, data: cuePoints }]);
+    const segmentSize = info.byteLength + tracks.byteLength + clusterBlobs.reduce((sum, cluster) => sum + cluster.size, 0) + cues.byteLength;
+    const parts = [ebml, ebmlHeader(0x18538067, segmentSize), info, tracks];
+    for (const cluster of clusterBlobs) parts.push(...cluster.parts);
+    parts.push(cues);
+    return new Blob(parts, { type: "video/webm" });
+}
 
 const RENDER_PROFILES = {
     quality: { label: "高质量", pixelRatio: 2, highQualitySH: true },
@@ -67,15 +262,38 @@ void effectState(vec3 center) {
     } else if (uEffectMode < 4.5) {
         float height = clamp((center.y - (uEffectCenter.y - uEffectRadius)) / max(2.0 * uEffectRadius, 0.0001), 0.0, 1.0);
         delay = clamp((1.0 - height) * 0.54 + gSeed * 0.23, 0.0, 0.78);
-    } else {
+    } else if (uEffectMode < 5.5) {
         delay = clamp(gDist * 0.20 + gSeed * 0.52, 0.0, 0.78);
+    } else if (uEffectMode < 6.5) {
+        delay = clamp(gDist * 0.20 + gSeed * 0.52, 0.0, 0.78);
+    } else if (uEffectMode < 7.5) {
+        float band = floor((center.y - uEffectCenter.y + uEffectRadius) / max(uEffectRadius * 0.12, 0.0001));
+        delay = clamp(fract(band * 0.173 + gSeed * 0.31) * 0.58 + gDist * 0.18, 0.0, 0.82);
+    } else if (uEffectMode < 8.5) {
+        float ring = abs(gDist - uEffectProgress * 1.35);
+        delay = clamp(gDist * 0.64 + gSeed * 0.10, 0.0, 0.84);
+        gWave = exp(-pow(ring / max(uEffectWave * 1.8, 0.01), 2.0));
+    } else if (uEffectMode < 9.5) {
+        delay = clamp(gDist * 0.48 + gSeed * 0.24, 0.0, 0.82);
+    } else if (uEffectMode < 10.5) {
+        delay = clamp(0.08 + gSeed * 0.38 + gDist * 0.22, 0.0, 0.82);
+    } else if (uEffectMode < 11.5) {
+        float height = clamp((center.y - (uEffectCenter.y - uEffectRadius)) / max(2.0 * uEffectRadius, 0.0001), 0.0, 1.0);
+        delay = clamp(height * 0.62 + gSeed * 0.16, 0.0, 0.86);
+    } else {
+        delay = clamp(gDist * 0.35 + gSeed * 0.18, 0.0, 0.78);
     }
     gSettle = smoothstep(delay, delay + 0.22, uEffectProgress);
-    gWave = exp(-pow((uEffectProgress - delay) / max(uEffectWave, 0.005), 2.0));
-    if (uEffectMode > 5.5) {
+    if (uEffectMode < 7.5 || uEffectMode > 8.5) {
+        gWave = exp(-pow((uEffectProgress - delay) / max(uEffectWave, 0.005), 2.0));
+    }
+    if (uEffectMode > 5.5 && uEffectMode < 6.5) {
         float pulseAt = 0.10 + gDist * 0.68;
         gSettle = 1.0;
         gWave = exp(-pow((uEffectProgress - pulseAt) / max(uEffectWave * 1.6, 0.01), 2.0));
+    } else if (uEffectMode > 11.5) {
+        gSettle = 1.0;
+        gWave = 0.5 + 0.5 * sin(uEffectProgress * 6.28318 * 2.0 + gDist * 10.0 + gSeed * 6.28318);
     }
     if (uEffectProgress >= 0.9995) { gSettle = 1.0; gWave = 0.0; }
 }
@@ -116,8 +334,36 @@ void modifySplatCenter(inout vec3 center) {
         vec3 dust = original + vec3(jitter.x * 0.65, -(0.45 + gSeed * 1.15), jitter.z * 0.65) * uEffectRadius * uEffectStrength;
         dust.xz += vec2(sin(gSeed * 31.0), cos(gSeed * 27.0)) * uEffectRadius * loose * 0.18;
         center = mix(dust, original, gSettle);
-    } else {
+    } else if (uEffectMode < 6.5) {
         center += normalize(rel + jitter * 0.05 + vec3(0.00001)) * gWave * uEffectRadius * uEffectStrength * 0.045;
+    } else if (uEffectMode < 7.5) {
+        float band = floor(rel.y / max(uEffectRadius * 0.10, 0.0001));
+        vec3 glitch = original;
+        glitch.x += sin(band * 1.77 + gSeed * 12.0) * uEffectRadius * uEffectStrength * 0.28 * loose;
+        glitch.z += cos(band * 2.11 + gSeed * 8.0) * uEffectRadius * uEffectStrength * 0.18 * loose;
+        glitch += jitter * uEffectRadius * 0.035 * gWave * uEffectStrength;
+        center = mix(glitch, original, gSettle);
+    } else if (uEffectMode < 8.5) {
+        vec3 radial = normalize(rel + vec3(0.00001));
+        center += radial * gWave * uEffectRadius * uEffectStrength * 0.075;
+        center.y += sin(gDist * 30.0 - uEffectProgress * 18.0) * gWave * uEffectRadius * 0.018 * uEffectStrength;
+    } else if (uEffectMode < 9.5) {
+        float a = gSeed * 6.28318 + uEffectProgress * 9.0;
+        float r = uEffectRadius * (1.05 + 0.35 * sin(gSeed * 20.0));
+        vec3 portal = uEffectCenter + vec3(cos(a) * r, (gSeed - 0.5) * uEffectRadius * 1.8, sin(a) * r);
+        portal.y += sin(a * 1.7) * uEffectRadius * 0.24;
+        center = mix(portal, original, gSettle);
+    } else if (uEffectMode < 10.5) {
+        vec3 spark = uEffectCenter + jitter * uEffectRadius * (1.6 + gSeed * 1.6) * uEffectStrength;
+        spark.y += uEffectRadius * (0.55 + gSeed) * uEffectStrength;
+        center = mix(spark, original, gSettle);
+    } else if (uEffectMode < 11.5) {
+        float side = sign(sin(gSeed * 77.0));
+        vec3 peel = original + vec3(side * uEffectRadius * 0.55, 0.0, sin(gSeed * 31.0) * uEffectRadius * 0.35) * loose * uEffectStrength;
+        peel.y += loose * uEffectRadius * 0.18 * sin(gSeed * 20.0 + uEffectProgress * 8.0);
+        center = mix(peel, original, gSettle);
+    } else {
+        center += normalize(rel + vec3(0.00001)) * gWave * uEffectRadius * uEffectStrength * 0.025;
     }
     center.y += gWave * uEffectRadius * uEffectStrength * 0.035;
 }
@@ -126,7 +372,7 @@ void modifySplatRotationScale(vec3 originalCenter, vec3 modifiedCenter, inout ve
     effectState(originalCenter);
     vec3 originalScale = scale * uSplatScale;
     if (uEffectProgress >= 0.9995) { scale = originalScale; return; }
-    if (uEffectMode > 5.5) {
+    if ((uEffectMode > 5.5 && uEffectMode < 6.5) || uEffectMode > 11.5) {
         scale = originalScale * (1.0 + gWave * 0.72 * uEffectStrength);
         return;
     }
@@ -139,7 +385,7 @@ void modifySplatRotationScale(vec3 originalCenter, vec3 modifiedCenter, inout ve
 
 void modifySplatColor(vec3 center, inout vec4 color) {
     if (uEffectProgress >= 0.9995) return;
-    if (uEffectMode > 5.5) {
+    if ((uEffectMode > 5.5 && uEffectMode < 6.5) || uEffectMode > 11.5) {
         color.rgb += uEffectTint * gWave * 0.62 * uEffectStrength;
         return;
     }
@@ -151,7 +397,9 @@ void modifySplatColor(vec3 center, inout vec4 color) {
 
 const EFFECT_TINTS = [
     [0.12, 0.74, 1.00], [0.05, 0.92, 1.00], [0.25, 0.62, 1.00],
-    [0.72, 0.22, 1.00], [0.10, 0.95, 0.78], [1.00, 0.45, 0.12], [0.08, 0.72, 1.00]
+    [0.72, 0.22, 1.00], [0.10, 0.95, 0.78], [1.00, 0.45, 0.12], [0.08, 0.72, 1.00],
+    [0.15, 1.00, 0.55], [0.00, 0.95, 1.00], [0.85, 0.28, 1.00],
+    [1.00, 0.60, 0.12], [0.55, 0.80, 1.00], [0.25, 0.95, 1.00]
 ];
 
 class Studio {
@@ -178,6 +426,7 @@ class Studio {
         this.shotBase = null;
         this.playing = false;
         this.recording = false;
+        this.cancelRecording = false;
         this.scrubbing = false;
         this.progress = 0;
         this.startTime = 0;
@@ -196,7 +445,7 @@ class Studio {
 
     async initialize() {
         this.device = await pc.createGraphicsDevice(this.canvas, {
-            deviceTypes: [pc.DEVICETYPE_WEBGL2], antialias: false, powerPreference: "high-performance"
+            deviceTypes: [pc.DEVICETYPE_WEBGL2], antialias: false, powerPreference: "high-performance", preserveDrawingBuffer: true
         });
         this.device.maxPixelRatio = Math.min(devicePixelRatio || 1, 2);
         const options = new pc.AppOptions();
@@ -259,11 +508,15 @@ class Studio {
         ["duration", "effectStrength", "wave", "splatSize", "resolution", "fps", "bitrate"].forEach(id => {
             $(id).addEventListener(id === "resolution" || id === "fps" || id === "bitrate" ? "change" : "input", () => this.markRenderDirty());
         });
+        this.fixedExportFps = $("fps").value;
+        $("exportMode").addEventListener("change", () => { this.updateExportModeControls(true); this.markRenderDirty(); });
         $("renderQuality").addEventListener("change", () => this.markRenderDirty());
         $("applyRenderSettings").onclick = () => this.applyRenderSettings(true);
         $("showTrajectory").addEventListener("change", () => this.toast($("showTrajectory").checked ? "已显示运镜轨迹" : "已隐藏运镜轨迹"));
         $("autoCamera").addEventListener("change", () => { this.markRenderDirty(); this.updateCamera(this.scrubbing); });
+        this.enhanceRangeInputs();
         this.bindTrajectoryControls();
+        this.updateExportModeControls(false);
 
         this.canvas.addEventListener("contextmenu", e => e.preventDefault());
         this.canvas.addEventListener("pointerdown", e => this.beginPointer(e));
@@ -285,6 +538,57 @@ class Studio {
         window.addEventListener("blur", () => this.clearPointer());
         window.addEventListener("resize", () => this.app?.resizeCanvas());
         this.updateLabels();
+    }
+
+    enhanceRangeInputs() {
+        document.querySelectorAll(".panel input[type=range]").forEach(range => {
+            if (!range.id || range.dataset.enhanced === "1") return;
+            range.dataset.enhanced = "1";
+            const number = document.createElement("input");
+            number.type = "number";
+            number.className = "param-number";
+            number.id = `${range.id}Number`;
+            number.min = range.min;
+            number.max = range.max;
+            number.step = range.step || "any";
+            number.value = range.value;
+            number.disabled = range.disabled;
+            range.insertAdjacentElement("afterend", number);
+            range.addEventListener("input", () => { number.value = range.value; });
+            range.addEventListener("change", () => { number.value = range.value; });
+            number.addEventListener("input", () => {
+                if (number.value === "") return;
+                const min = number.min === "" ? -Infinity : +number.min;
+                const max = number.max === "" ? Infinity : +number.max;
+                const value = clamp(+number.value, min, max);
+                if (Number.isFinite(value)) {
+                    range.value = value;
+                    range.dispatchEvent(new Event("input", { bubbles: true }));
+                }
+            });
+            number.addEventListener("change", () => {
+                if (number.value === "") number.value = range.value;
+                const min = number.min === "" ? -Infinity : +number.min;
+                const max = number.max === "" ? Infinity : +number.max;
+                const value = clamp(+number.value, min, max);
+                range.value = Number.isFinite(value) ? value : range.value;
+                number.value = range.value;
+                range.dispatchEvent(new Event("input", { bubbles: true }));
+                range.dispatchEvent(new Event("change", { bubbles: true }));
+            });
+        });
+        this.syncRangeNumberStates();
+    }
+
+    syncRangeNumber(id) {
+        const range = $(id), number = $(`${id}Number`);
+        if (!range || !number) return;
+        number.value = range.value;
+        number.disabled = range.disabled;
+    }
+
+    syncRangeNumberStates() {
+        document.querySelectorAll(".panel input[type=range]").forEach(range => this.syncRangeNumber(range.id));
     }
 
     bindCameraControls() {
@@ -350,6 +654,7 @@ class Studio {
         const custom = $("orbitAxis").value === "custom";
         $("axisAzimuth").disabled = !custom;
         $("axisElevation").disabled = !custom;
+        this.syncRangeNumberStates();
     }
 
     syncLegacyCameraControls(includeInputs = true) {
@@ -389,7 +694,14 @@ class Studio {
         };
         ["orbitTurns", "arcDegrees", "axisAzimuth", "axisElevation", "endDistance",
          "startYaw", "startPitch", "startDistance", "centerX", "centerY", "centerZ",
-         "followX", "followY", "followZ", "cameraRoll", "cameraRollEnd"].forEach(id => $(id).addEventListener("input", refreshShot));
+         "followX", "followY", "followZ"].forEach(id => $(id).addEventListener("input", refreshShot));
+        const previewRoll = progress => {
+            this.pauseAtCurrentCamera();
+            refreshShot();
+            if (this.count) this.setPreviewProgress(progress);
+        };
+        $("cameraRoll").addEventListener("input", () => previewRoll(0));
+        $("cameraRollEnd").addEventListener("input", () => previewRoll(1));
         $("lookAtMode").addEventListener("change", () => { this.updateLookAtControlState(); refreshShot(); });
         $("cameraFov").addEventListener("input", () => {
             if (this.camera) this.camera.camera.fov = +$("cameraFov").value;
@@ -404,6 +716,7 @@ class Studio {
     updateLookAtControlState() {
         const custom = $("lookAtMode").value === "custom";
         ["followX", "followY", "followZ"].forEach(id => $(id).disabled = !custom);
+        this.syncRangeNumberStates();
     }
 
     syncCameraControls() {
@@ -424,6 +737,7 @@ class Studio {
         $("axisAzimuthOut").value = `${Math.round(+$('axisAzimuth').value)}°`;
         $("axisElevationOut").value = `${Math.round(+$('axisElevation').value)}°`;
         $("cameraFovOut").value = `${Math.round(+$('cameraFov').value)}°`;
+        this.syncRangeNumberStates();
     }
 
     rebuildOrbitFrame() {
@@ -493,9 +807,35 @@ class Studio {
     }
 
     detectRecorder() {
-        const list = [["video/mp4;codecs=avc1.42E01E", "MP4 / H.264"], ["video/mp4", "MP4"], ["video/webm;codecs=vp9", "WebM / VP9"], ["video/webm;codecs=vp8", "WebM / VP8"]];
+        const list = [["video/mp4;codecs=avc1.42E01E", "MP4 / H.264"], ["video/webm;codecs=vp8", "WebM / VP8 · 顺滑优先"], ["video/webm;codecs=vp9", "WebM / VP9 · 高压缩"], ["video/mp4", "MP4"]];
         this.recordMime = list.find(x => window.MediaRecorder && MediaRecorder.isTypeSupported(x[0]));
-        $("formatHint").textContent = this.recordMime ? `输出格式：${this.recordMime[1]}。完整高斯实时录制。` : "当前浏览器不支持画布视频录制。";
+        $("formatHint").textContent = this.recordMime ? `实时录制固定请求 60 FPS：${this.recordMime[1]}；逐帧导出可自选帧率。` : "当前浏览器不支持实时录制；仍可尝试逐帧导出。";
+    }
+
+    updateExportModeControls(rememberFps) {
+        const fps = $("fps");
+        const realtime = ($("exportMode")?.value || "realtime") === "realtime";
+        if (realtime) {
+            if (rememberFps && !fps.disabled) this.fixedExportFps = fps.value;
+            fps.value = "60";
+            fps.disabled = true;
+            fps.title = "所见即所得实时录制固定请求 60 FPS";
+        } else {
+            fps.disabled = false;
+            fps.title = "";
+            if (this.fixedExportFps) fps.value = this.fixedExportFps;
+        }
+    }
+
+    selectedOutputSize() {
+        const value = $("resolution").value;
+        if (value === "current") {
+            const w = Math.max(2, Math.round(this.canvas.width || this.canvas.clientWidth || 1280));
+            const h = Math.max(2, Math.round(this.canvas.height || this.canvas.clientHeight || 720));
+            return { width: w, height: h, fixed: false, label: "current" };
+        }
+        const [width, height] = value.split("x").map(Number);
+        return { width, height, fixed: true, label: value };
     }
 
     setLoading(show, title = "", text = "") { $("loading").classList.toggle("hidden", !show); if (title) $("loadingTitle").textContent = title; if (text) $("loadingText").textContent = text; }
@@ -835,13 +1175,125 @@ class Studio {
 
     syncPlayButton() { $("play").textContent = this.playing ? "暂停" : "播放动画"; }
 
-    openRenderWindow(width, height) {
+    openRenderWindow(width, height, mode = "fixed") {
         this.renderWindow = window.open("", "GaussianSplatterEffectsStudioRender", "width=1100,height=760,resizable=yes");
         if (!this.renderWindow) { this.toast("预览窗口被浏览器拦截，请允许弹出窗口"); return null; }
+        const realtime = mode === "realtime";
+        const title = realtime ? "正在实时录制网页画面…" : "正在逐帧渲染视频…";
+        const note = realtime ? `${width}×${height}，直接录制当前网页画布，观感最接近实时预览` : `${width}×${height}，使用固定时间码导出，完成后会在这里预览并导出`;
+        const progress = realtime ? "实时录制中" : "准备中";
         this.renderWindow.document.open();
-        this.renderWindow.document.write(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>视频渲染预览</title><style>html,body{height:100%;margin:0;background:#080b0f;color:#eef7fb;font-family:"Microsoft YaHei UI",sans-serif}.wrap{height:100%;display:grid;place-items:center}.card{text-align:center;padding:38px}.ring{width:42px;height:42px;margin:0 auto 18px;border:4px solid #1d3039;border-top-color:#65e4ff;border-radius:50%;animation:s 1s linear infinite}@keyframes s{to{transform:rotate(360deg)}}small{color:#8b99a8}</style><body><div class="wrap"><div class="card"><div class="ring"></div><h2>正在渲染视频…</h2><small>${width}×${height}，完成后将在此窗口预览并导出</small></div></div></body></html>`);
+        this.renderWindow.document.write(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>视频渲染预览</title><style>html,body{height:100%;margin:0;background:#080b0f;color:#eef7fb;font-family:"Microsoft YaHei UI",sans-serif}.wrap{height:100%;display:grid;place-items:center}.card{width:min(560px,88vw);text-align:center;padding:38px}.ring{width:42px;height:42px;margin:0 auto 18px;border:4px solid #1d3039;border-top-color:#65e4ff;border-radius:50%;animation:s 1s linear infinite}@keyframes s{to{transform:rotate(360deg)}}small{color:#8b99a8}.bar{height:10px;margin:22px 0 10px;border-radius:99px;background:#17232b;overflow:hidden}.bar span{display:block;height:100%;width:${realtime ? 100 : 0}%;background:linear-gradient(90deg,#54d6ff,#7effc6)}#progressText{font-size:13px;color:#c8d6df}</style><body><div class="wrap"><div class="card"><div class="ring"></div><h2>${title}</h2><small>${note}</small><div class="bar"><span id="progressBar"></span></div><div id="progressText">${progress}</div></div></div></body></html>`);
         this.renderWindow.document.close();
         return this.renderWindow;
+    }
+
+    updateRenderWindowProgress(frame, total, elapsedMs) {
+        const win = this.renderWindow;
+        if (!win || win.closed) return;
+        const percent = total ? Math.round(frame * 100 / total) : 0;
+        const bar = win.document.getElementById("progressBar");
+        const text = win.document.getElementById("progressText");
+        if (bar) bar.style.width = `${percent}%`;
+        if (text) {
+            const remaining = frame > 0 ? Math.max(0, elapsedMs * (total - frame) / frame) : 0;
+            text.textContent = `${frame}/${total} 帧 · ${percent}% · 已用 ${(elapsedMs / 1000).toFixed(1)}s · 预计剩余 ${(remaining / 1000).toFixed(1)}s`;
+        }
+    }
+
+    setRecordingButton(active) {
+        $("record").classList.toggle("active", active);
+        $("record").textContent = active ? "停止渲染" : "渲染视频";
+    }
+
+    canvasToWebPBuffer(quality) {
+        return new Promise((resolve, reject) => {
+            this.canvas.toBlob(blob => {
+                if (!blob) return reject(new Error("无法从画布读取当前帧"));
+                blob.arrayBuffer().then(resolve, reject);
+            }, "image/webp", quality);
+        });
+    }
+
+    canvasToOpaqueWebPBuffer(quality) {
+        const canvas = this.exportCanvas || (this.exportCanvas = document.createElement("canvas"));
+        if (canvas.width !== this.canvas.width) canvas.width = this.canvas.width;
+        if (canvas.height !== this.canvas.height) canvas.height = this.canvas.height;
+        const ctx = canvas.getContext("2d", { alpha: false });
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(this.canvas, 0, 0);
+        return new Promise((resolve, reject) => {
+            canvas.toBlob(blob => {
+                if (!blob) return reject(new Error("无法从兜底画布读取当前帧"));
+                blob.arrayBuffer().then(resolve, reject);
+            }, "image/webp", quality);
+        });
+    }
+
+    async renderPreciseFrame(progress) {
+        this.progress = clamp(progress, 0, 1);
+        this.updateEffectUniforms();
+        this.updateCamera(true);
+        $("timeline").value = this.progress;
+        $("timeLabel").textContent = secondsLabel(this.progress * this.duration);
+        if (this.app.render) this.app.render();
+        await nextFrame();
+        if (this.app.render) this.app.render();
+    }
+
+    async startRealtimeRecording() {
+        if (!this.count) return this.toast("请先导入高斯 PLY");
+        if (!this.recordMime) return this.toast("当前浏览器不支持实时录制，请切换到精确帧率逐帧导出");
+        if (this.renderConfigDirty) this.applyRenderSettings(false);
+        const output = this.selectedOutputSize();
+        const w = output.width, h = output.height;
+        const fps = 60;
+        const bitrate = +$("bitrate").value;
+        const chunks = [];
+
+        this.captureShotBase();
+        this.openRenderWindow(w, h, "realtime");
+        if (output.fixed) {
+            this.app.setCanvasResolution(pc.RESOLUTION_FIXED, w, h);
+            this.app.resizeCanvas(w, h);
+        }
+
+        const stream = this.canvas.captureStream(fps);
+        try {
+            this.mediaRecorder = new MediaRecorder(stream, { mimeType: this.recordMime[0], videoBitsPerSecond: bitrate });
+        } catch {
+            this.mediaRecorder = new MediaRecorder(stream, { videoBitsPerSecond: bitrate });
+        }
+
+        this.mediaRecorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+        this.mediaRecorder.onstop = () => {
+            const type = this.mediaRecorder.mimeType || this.recordMime[0];
+            const ext = type.includes("mp4") ? "mp4" : "webm";
+            const blob = new Blob(chunks, { type });
+            const filename = `GaussianSplatterEffectsStudio_${$("effectPreset").value}_${$("cameraPreset").value}_${w}x${h}_${fps}fps_realtime.${ext}`;
+            this.showRenderedVideo(blob, filename, w, h, fps);
+            stream.getTracks().forEach(t => t.stop());
+            this.recording = false;
+            this.realtimeRecording = false;
+            this.cancelRecording = false;
+            this.setRecordingButton(false);
+            if (output.fixed) {
+                this.app.setCanvasResolution(pc.RESOLUTION_AUTO);
+                this.app.resizeCanvas();
+            }
+            this.playing = false;
+            this.syncPlayButton();
+            this.toast(`实时录制视频已生成 · ${(blob.size / 1048576).toFixed(1)} MB`);
+        };
+
+        this.realtimeRecording = true;
+        this.recording = true;
+        this.cancelRecording = false;
+        this.setRecordingButton(true);
+        this.mediaRecorder.start(500);
+        this.restart(true);
+        this.toast(`开始所见即所得录制 ${w}×${h} / ${fps} FPS · ${this.recordMime[1]}`);
     }
 
     showRenderedVideo(blob, filename, width, height, fps) {
@@ -850,46 +1302,88 @@ class Studio {
         const win = this.renderWindow && !this.renderWindow.closed ? this.renderWindow : window.open("", "GaussianSplatterEffectsStudioRender", "width=1100,height=760,resizable=yes");
         if (!win) return this.toast("视频已生成，但预览窗口被拦截");
         win.document.open();
-        win.document.write(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>渲染完成 · ${filename}</title><style>html,body{min-height:100%;margin:0;background:#080b0f;color:#eef7fb;font-family:"Microsoft YaHei UI",sans-serif}.wrap{max-width:1100px;margin:auto;padding:24px}.head{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:16px}h2{margin:0;font-size:18px}p{margin:5px 0 0;color:#8b99a8;font-size:12px}video{display:block;width:100%;max-height:70vh;background:#000;border:1px solid #26333d;border-radius:12px}.export{display:inline-flex;align-items:center;height:40px;padding:0 18px;border-radius:9px;background:linear-gradient(135deg,#198eaa,#21609b);color:white;text-decoration:none;font-size:13px;white-space:nowrap}</style><body><div class="wrap"><div class="head"><div><h2>视频渲染完成</h2><p>${width}×${height} · ${fps} FPS · ${(blob.size / 1048576).toFixed(1)} MB</p></div><a class="export" href="${this.renderVideoUrl}" download="${filename}">导出视频</a></div><video src="${this.renderVideoUrl}" controls autoplay loop></video></div></body></html>`);
+        win.document.write(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>渲染完成 · ${filename}</title><style>html,body{min-height:100%;margin:0;background:#080b0f;color:#eef7fb;font-family:"Microsoft YaHei UI",sans-serif}.wrap{max-width:1100px;margin:auto;padding:24px}.head{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:16px}h2{margin:0;font-size:18px}p{margin:5px 0 0;color:#8b99a8;font-size:12px}video{display:block;width:100%;max-height:70vh;background:#000;border:1px solid #26333d;border-radius:12px}.export{display:inline-flex;align-items:center;height:40px;padding:0 18px;border-radius:9px;background:linear-gradient(135deg,#198eaa,#21609b);color:white;text-decoration:none;font-size:13px;white-space:nowrap}.hint{margin-top:10px;color:#8b99a8;font-size:12px}</style><body><div class="wrap"><div class="head"><div><h2>视频渲染完成</h2><p>${width}×${height} · ${fps} FPS · ${(blob.size / 1048576).toFixed(1)} MB</p></div><a class="export" href="${this.renderVideoUrl}" download="${filename}">导出视频</a></div><video id="renderedVideo" src="${this.renderVideoUrl}" controls autoplay loop></video><div class="hint" id="seekHint">如果进度条暂时不能拖动，正在尝试修复视频时长元数据…</div></div><script>const v=document.getElementById("renderedVideo"),hint=document.getElementById("seekHint");function done(t){if(hint)hint.textContent=t;}function fix(){if(!v)return;const bad=!Number.isFinite(v.duration)||Number.isNaN(v.duration);if(!bad){done("预览视频已可拖动；若下载后的 WebM 在其他播放器不能拖动，建议用支持 WebM 索引的播放器打开。");return;}let old=0;try{old=v.currentTime||0;v.addEventListener("timeupdate",function once(){v.removeEventListener("timeupdate",once);try{v.currentTime=old;}catch(e){}done("已尝试修复预览拖动；下载后的浏览器实时录制 WebM 若仍不能拖动，是录制封装缺索引导致。");},{once:true});v.currentTime=1e101;}catch(e){done("当前浏览器没有暴露可修复的时长元数据。");}}v.addEventListener("loadedmetadata",fix,{once:true});setTimeout(fix,800);</script></body></html>`);
         win.document.close();
         win.focus();
     }
 
     async startRecording() {
-        if (!this.count || !this.recordMime) return this.toast("当前环境无法录制视频");
+        if (!this.count) return this.toast("请先导入高斯 PLY");
+        if (this.recording) return this.stopRecording();
+        const mode = $("exportMode")?.value || "realtime";
+        if (mode === "realtime") return this.startRealtimeRecording();
+        if (!this.canvas.toBlob) return this.toast("当前环境不支持逐帧导出");
         if (this.renderConfigDirty) this.applyRenderSettings(false);
-        const [w, h] = $("resolution").value.split("x").map(Number), fps = +$("fps").value, bitrate = +$("bitrate").value;
+
+        const output = this.selectedOutputSize();
+        const w = output.width, h = output.height;
+        const fps = +$("fps").value;
+        const bitrate = +$("bitrate").value;
+        const totalFrames = Math.max(1, Math.round(this.duration * fps));
+        const durationMs = totalFrames * 1000 / fps;
+        const quality = bitrate >= 80000000 ? 0.97 : bitrate >= 50000000 ? 0.94 : bitrate >= 25000000 ? 0.90 : 0.84;
+        const previous = { playing: this.playing, progress: this.progress };
+
         this.captureShotBase();
-        this.openRenderWindow(w, h);
-        this.app.setCanvasResolution(pc.RESOLUTION_FIXED, w, h);
-        const stream = this.canvas.captureStream(fps), chunks = [];
-        try { this.mediaRecorder = new MediaRecorder(stream, { mimeType: this.recordMime[0], videoBitsPerSecond: bitrate }); }
-        catch { this.mediaRecorder = new MediaRecorder(stream, { videoBitsPerSecond: bitrate }); }
-        this.mediaRecorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
-        this.mediaRecorder.onstop = () => {
-            const type = this.mediaRecorder.mimeType || this.recordMime[0], ext = type.includes("mp4") ? "mp4" : "webm", blob = new Blob(chunks, { type });
-            const filename = `GaussianSplatterEffectsStudio_${$("effectPreset").value}_${$("cameraPreset").value}_${w}x${h}_${fps}fps.${ext}`;
-            this.showRenderedVideo(blob, filename, w, h, fps);
-            stream.getTracks().forEach(t => t.stop());
-            this.recording = false;
-            $("record").classList.remove("active");
-            $("record").textContent = "渲染视频";
-            $("record").textContent = "录制视频";
-            $("record").textContent = "渲染视频";
-            this.app.setCanvasResolution(pc.RESOLUTION_AUTO);
-            this.app.resizeCanvas();
-            this.toast(`视频已生成 · ${(blob.size / 1048576).toFixed(1)} MB`);
-        };
-        this.mediaRecorder.start(500);
+        this.openRenderWindow(w, h, "fixed");
         this.recording = true;
-        $("record").classList.add("active");
-        $("record").textContent = "停止渲染";
-        $("record").textContent = "停止录制";
-        $("record").textContent = "停止渲染";
-        this.restart(true);
-        this.toast(`开始录制 ${w}×${h} / ${fps} FPS`);
+        this.cancelRecording = false;
+        this.playing = false;
+        this.setRecordingButton(true);
+        this.syncPlayButton();
+        this.toast(`开始固定帧率渲染 ${w}×${h} / ${fps} FPS，共 ${totalFrames} 帧`);
+
+        const frames = [];
+        const started = performance.now();
+        try {
+            if (output.fixed) {
+                this.app.setCanvasResolution(pc.RESOLUTION_FIXED, w, h);
+                this.app.resizeCanvas(w, h);
+            }
+            await nextFrame();
+            for (let i = 0; i < totalFrames; i++) {
+                if (this.cancelRecording) throw new Error("用户取消了渲染");
+                const progress = totalFrames === 1 ? 1 : i / (totalFrames - 1);
+                await this.renderPreciseFrame(progress);
+                let webp = await this.canvasToWebPBuffer(quality);
+                let vp8;
+                try {
+                    vp8 = extractVP8FromWebP(webp);
+                } catch (err) {
+                    if (!String(err?.message || err).includes("无损 WebP")) throw err;
+                    webp = await this.canvasToOpaqueWebPBuffer(quality);
+                    vp8 = extractVP8FromWebP(webp);
+                }
+                frames.push({ frame: vp8.frame, timecode: Math.round(i * 1000 / fps) });
+                this.updateRenderWindowProgress(i + 1, totalFrames, performance.now() - started);
+                if (i % 3 === 2) await sleep(0);
+            }
+            const blob = makeFixedFpsWebM(frames, w, h, fps, durationMs);
+            const filename = `GaussianSplatterEffectsStudio_${$("effectPreset").value}_${$("cameraPreset").value}_${w}x${h}_${fps}fps_fixed.webm`;
+            this.showRenderedVideo(blob, filename, w, h, fps);
+            this.toast(`固定帧率视频已生成 · ${(blob.size / 1048576).toFixed(1)} MB`);
+        } catch (err) {
+            console.error(err);
+            this.toast(`渲染中止：${err?.message || err}`);
+        } finally {
+            this.recording = false;
+            this.cancelRecording = false;
+            this.setRecordingButton(false);
+            if (output.fixed) {
+                this.app.setCanvasResolution(pc.RESOLUTION_AUTO);
+                this.app.resizeCanvas();
+            }
+            this.progress = previous.progress;
+            this.playing = false;
+            this.updateEffectUniforms();
+            this.updateCamera();
+            this.syncPlayButton();
+        }
     }
-    stopRecording() { if (this.mediaRecorder && this.mediaRecorder.state !== "inactive") this.mediaRecorder.stop(); }
+    stopRecording() {
+        this.cancelRecording = true;
+        if (this.mediaRecorder && this.mediaRecorder.state !== "inactive") this.mediaRecorder.stop();
+    }
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
